@@ -1,0 +1,11 @@
+{
+  "devices": [
+    {
+      "id": "example_room",
+      "name": "Example Room",
+      "ip": "192.168.x.x",
+      "token": "your_32_char_hex_token_here_0000",
+      "model": "zhimi.airp.mb5"
+    }
+  ]
+}

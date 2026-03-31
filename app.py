@@ -1,8 +1,12 @@
 """Xiaomi Air Purifier local control server.
 
 Communicates directly with purifiers over the local network using the miio
-protocol — no Xiaomi cloud or app required.  Run on any machine on the same
-WiFi as the purifiers, then open http://<ip>:5000 on your phone.
+MiOT protocol — no Xiaomi cloud or app required. Uses generic MiOT
+get_properties/set_properties so ALL models work without needing
+model-specific python-miio support.
+
+Run on any machine on the same WiFi as the purifiers,
+then open http://<ip>:5000 on your phone.
 """
 
 import json
@@ -14,7 +18,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request
 
 try:
-    from miio import AirPurifierMiot, AirPurifier
+    from miio import Device
     from miio.exceptions import DeviceException
     MIIO_AVAILABLE = True
 except ImportError:
@@ -24,12 +28,29 @@ app = Flask(__name__)
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# MiOT property mapping (standard for Xiaomi air purifiers)
+# ---------------------------------------------------------------------------
+
+MIOT_PROPS = [
+    {"did": "power",        "siid": 2, "piid": 1},
+    {"did": "mode",         "siid": 2, "piid": 4},
+    {"did": "fan_level",    "siid": 2, "piid": 5},
+    {"did": "humidity",     "siid": 3, "piid": 1},
+    {"did": "pm25",         "siid": 3, "piid": 4},
+    {"did": "temperature",  "siid": 3, "piid": 7},
+    {"did": "filter_life",  "siid": 4, "piid": 1},
+    {"did": "filter_hours", "siid": 4, "piid": 3},
+    {"did": "motor_speed",  "siid": 9, "piid": 1},
+]
+
+MODE_NAMES = {0: "Auto", 1: "Silent", 2: "Favorite", 3: "Fan"}
+MODE_VALUES = {"auto": 0, "silent": 1, "favorite": 2, "fan": 3}
+
+# ---------------------------------------------------------------------------
 # Device management
 # ---------------------------------------------------------------------------
 
 DEVICES_FILE = Path(__file__).parent / "devices.json"
-
-# Cache: device_id -> {"config": {...}, "connection": <miio obj>, "protocol": "miot"|"miio"}
 _device_cache: dict = {}
 
 
@@ -38,68 +59,53 @@ def _load_device_configs() -> list[dict]:
         return json.load(f)["devices"]
 
 
-def _get_connection(dev_cfg: dict):
-    """Return a miio connection object, trying MiOT first then classic miio."""
+def _get_device(dev_cfg: dict) -> Device | None:
     if not MIIO_AVAILABLE:
         return None
 
     dev_id = dev_cfg["id"]
     cached = _device_cache.get(dev_id)
     if cached and cached["config"] == dev_cfg:
-        return cached["connection"]
+        return cached["device"]
 
-    ip, token = dev_cfg["ip"], dev_cfg["token"]
-
-    # Try MiOT protocol first (newer purifiers: 4, 4 Pro, 4 Lite, Pro H)
     try:
-        conn = AirPurifierMiot(ip, token)
-        conn.status()  # probe
-        _device_cache[dev_id] = {"config": dev_cfg, "connection": conn, "protocol": "miot"}
-        log.info("Connected to %s via MiOT", dev_id)
-        return conn
-    except Exception:
-        pass
-
-    # Fall back to classic miio (older: 2S, 3H, Pro, etc.)
-    try:
-        conn = AirPurifier(ip, token)
-        conn.status()  # probe
-        _device_cache[dev_id] = {"config": dev_cfg, "connection": conn, "protocol": "miio"}
-        log.info("Connected to %s via classic miio", dev_id)
-        return conn
-    except Exception:
+        dev = Device(dev_cfg["ip"], dev_cfg["token"])
+        dev.send("miIO.info")  # probe connectivity
+        _device_cache[dev_id] = {"config": dev_cfg, "device": dev}
+        log.info("Connected to %s at %s", dev_id, dev_cfg["ip"])
+        return dev
+    except Exception as e:
+        log.warning("Cannot reach %s: %s", dev_id, e)
         _device_cache.pop(dev_id, None)
         return None
 
 
 def _poll_device(dev_cfg: dict) -> dict:
-    """Poll a single device and return its status dict."""
     result = {
         "id": dev_cfg["id"],
         "name": dev_cfg["name"],
         "ip": dev_cfg["ip"],
+        "model": dev_cfg.get("model", ""),
         "online": False,
     }
     try:
-        conn = _get_connection(dev_cfg)
-        if conn is None:
+        dev = _get_device(dev_cfg)
+        if dev is None:
             return result
 
-        s = conn.status()
+        props = dev.send("get_properties", MIOT_PROPS)
+        vals = {p["did"]: p.get("value") for p in props if p.get("code", -1) == 0}
+
         result["online"] = True
-        result["power"] = s.is_on if hasattr(s, "is_on") else s.power == "on"
-        result["aqi"] = getattr(s, "aqi", None)
-        result["humidity"] = getattr(s, "humidity", None)
-        result["temperature"] = getattr(s, "temperature", None)
-        result["mode"] = str(getattr(s, "mode", "unknown"))
-        result["fan_level"] = getattr(s, "favorite_level", None) or getattr(s, "favorite_rpm", None)
-        result["motor_speed"] = getattr(s, "motor_speed", None)
-        result["filter_life"] = getattr(s, "filter_life_remaining", None)
-        result["filter_hours_used"] = getattr(s, "filter_hours_used", None)
-        result["buzzer"] = getattr(s, "buzzer", None)
-        result["led"] = getattr(s, "led", None) if hasattr(s, "led") else getattr(s, "led_brightness", None)
-        cached = _device_cache.get(dev_cfg["id"], {})
-        result["protocol"] = cached.get("protocol", "unknown")
+        result["power"] = vals.get("power", False)
+        result["aqi"] = vals.get("pm25")
+        result["humidity"] = vals.get("humidity")
+        result["temperature"] = vals.get("temperature")
+        result["mode"] = MODE_NAMES.get(vals.get("mode"), str(vals.get("mode", "?")))
+        result["fan_level"] = vals.get("fan_level")
+        result["motor_speed"] = vals.get("motor_speed")
+        result["filter_life"] = vals.get("filter_life")
+        result["filter_hours_used"] = vals.get("filter_hours")
     except Exception as e:
         log.warning("Error polling %s: %s", dev_cfg["id"], e)
         _device_cache.pop(dev_cfg["id"], None)
@@ -124,127 +130,127 @@ def api_status():
         futures = {pool.submit(_poll_device, d): d for d in devices}
         for fut in as_completed(futures):
             results.append(fut.result())
-    # Sort by config order
     id_order = {d["id"]: i for i, d in enumerate(devices)}
     results.sort(key=lambda r: id_order.get(r["id"], 999))
     return jsonify(results)
 
 
 def _find_device(device_id: str):
-    """Find device config and connection by id."""
     for d in _load_device_configs():
         if d["id"] == device_id:
-            conn = _get_connection(d)
-            return d, conn
+            dev = _get_device(d)
+            return d, dev
     return None, None
 
 
 @app.route("/api/device/<device_id>/power", methods=["POST"])
 def api_power(device_id):
-    dev_cfg, conn = _find_device(device_id)
-    if conn is None:
+    dev_cfg, dev = _find_device(device_id)
+    if dev is None:
         return jsonify({"error": "Device offline or not found"}), 503
 
     try:
         action = request.json.get("action", "toggle") if request.json else "toggle"
         if action == "on":
-            conn.on()
+            power = True
         elif action == "off":
-            conn.off()
+            power = False
         else:
-            s = conn.status()
-            is_on = s.is_on if hasattr(s, "is_on") else s.power == "on"
-            if is_on:
-                conn.off()
-            else:
-                conn.on()
-        return jsonify({"ok": True})
+            props = dev.send("get_properties", [{"did": "power", "siid": 2, "piid": 1}])
+            current = props[0].get("value", False) if props else False
+            power = not current
+
+        dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": power}])
+        return jsonify({"ok": True, "power": power})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/device/<device_id>/mode", methods=["POST"])
 def api_mode(device_id):
-    dev_cfg, conn = _find_device(device_id)
-    if conn is None:
+    dev_cfg, dev = _find_device(device_id)
+    if dev is None:
         return jsonify({"error": "Device offline or not found"}), 503
 
     mode_str = request.json.get("mode", "auto") if request.json else "auto"
+    mode_val = MODE_VALUES.get(mode_str.lower())
+    if mode_val is None:
+        return jsonify({"error": f"Unknown mode: {mode_str}. Use: auto, silent, favorite, fan"}), 400
 
     try:
-        cached = _device_cache.get(device_id, {})
-        protocol = cached.get("protocol", "miot")
-
-        if protocol == "miot":
-            from miio.integrations.airpurifier.zhimi.airpurifier_miot import OperationMode as MiotMode
-            mode_map = {
-                "auto": MiotMode.Auto,
-                "silent": MiotMode.Silent,
-                "favorite": MiotMode.Favorite,
-                "fan": MiotMode.Fan,
-            }
-        else:
-            from miio.integrations.airpurifier.zhimi.airpurifier import OperationMode as ClassicMode
-            mode_map = {
-                "auto": ClassicMode.Auto,
-                "silent": ClassicMode.Silent,
-                "favorite": ClassicMode.Favorite,
-            }
-
-        mode = mode_map.get(mode_str.lower())
-        if mode is None:
-            return jsonify({"error": f"Unknown mode: {mode_str}"}), 400
-        conn.set_mode(mode)
-        return jsonify({"ok": True})
+        dev.send("set_properties", [{"did": "mode", "siid": 2, "piid": 4, "value": mode_val}])
+        return jsonify({"ok": True, "mode": mode_str})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/device/<device_id>/fan_level", methods=["POST"])
 def api_fan_level(device_id):
-    dev_cfg, conn = _find_device(device_id)
-    if conn is None:
+    dev_cfg, dev = _find_device(device_id)
+    if dev is None:
         return jsonify({"error": "Device offline or not found"}), 503
 
     try:
         level = int(request.json.get("level", 5)) if request.json else 5
         level = max(0, min(14, level))
-        conn.set_favorite_level(level)
-        return jsonify({"ok": True})
+        dev.send("set_properties", [{"did": "fan_level", "siid": 2, "piid": 5, "value": level}])
+        return jsonify({"ok": True, "fan_level": level})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/device/<device_id>/buzzer", methods=["POST"])
-def api_buzzer(device_id):
-    dev_cfg, conn = _find_device(device_id)
-    if conn is None:
-        return jsonify({"error": "Device offline or not found"}), 503
+@app.route("/api/device/<device_id>/all_on", methods=["POST"])
+def api_all_on(device_id):
+    """Turn all purifiers on."""
+    devices = _load_device_configs()
+    results = []
+    for d in devices:
+        try:
+            dev = _get_device(d)
+            if dev:
+                dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": True}])
+                results.append({"id": d["id"], "ok": True})
+            else:
+                results.append({"id": d["id"], "error": "offline"})
+        except Exception as e:
+            results.append({"id": d["id"], "error": str(e)})
+    return jsonify(results)
 
-    try:
-        enabled = request.json.get("enabled", True) if request.json else True
-        conn.set_buzzer(enabled)
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/all_on", methods=["POST"])
+def api_all_on_global():
+    """Turn all purifiers on."""
+    devices = _load_device_configs()
+    results = []
+    for d in devices:
+        try:
+            dev = _get_device(d)
+            if dev:
+                dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": True}])
+                results.append({"id": d["id"], "ok": True})
+            else:
+                results.append({"id": d["id"], "error": "offline"})
+        except Exception as e:
+            results.append({"id": d["id"], "error": str(e)})
+    return jsonify(results)
 
 
-@app.route("/api/device/<device_id>/led", methods=["POST"])
-def api_led(device_id):
-    dev_cfg, conn = _find_device(device_id)
-    if conn is None:
-        return jsonify({"error": "Device offline or not found"}), 503
-
-    try:
-        enabled = request.json.get("enabled", True) if request.json else True
-        if hasattr(conn, "set_led"):
-            conn.set_led(enabled)
-        elif hasattr(conn, "set_led_brightness"):
-            from miio.integrations.airpurifier.zhimi.airpurifier_miot import LedBrightness
-            conn.set_led_brightness(LedBrightness.Bright if enabled else LedBrightness.Off)
-        return jsonify({"ok": True})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+@app.route("/api/all_off", methods=["POST"])
+def api_all_off_global():
+    """Turn all purifiers off."""
+    devices = _load_device_configs()
+    results = []
+    for d in devices:
+        try:
+            dev = _get_device(d)
+            if dev:
+                dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": False}])
+                results.append({"id": d["id"], "ok": True})
+            else:
+                results.append({"id": d["id"], "error": "offline"})
+        except Exception as e:
+            results.append({"id": d["id"], "error": str(e)})
+    return jsonify(results)
 
 
 # ---------------------------------------------------------------------------
