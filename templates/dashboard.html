@@ -2,266 +2,469 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#1a1a2e">
-<title>Air Purifier Control</title>
+<meta name="theme-color" content="#0a0f1a">
+<title>Air Quality Control</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌬</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #1a1a2e;
-  --bg-card: #16213e;
-  --bg-card-off: #0f1629;
-  --text: #e0e0e0;
-  --text-dim: #8892a4;
-  --accent: #4fc3f7;
-  --accent-hover: #29b6f6;
-  --green: #66bb6a;
-  --yellow: #fdd835;
-  --orange: #ffa726;
-  --red: #ef5350;
-  --border: #2a3a5c;
-  --shadow: 0 2px 12px rgba(0,0,0,0.3);
-  --radius: 12px;
+  --bg: #0a0f1a;
+  --surface: #111827;
+  --surface-raised: #1a2235;
+  --surface-hover: #1f2a40;
+  --border: rgba(255,255,255,0.06);
+  --border-strong: rgba(255,255,255,0.12);
+  --text: #e8ecf4;
+  --text-secondary: #7a8599;
+  --text-muted: #4a5568;
+  --aqi-good: #22c55e;
+  --aqi-mod: #eab308;
+  --aqi-unhealthy: #f97316;
+  --aqi-hazard: #ef4444;
+  --accent: #3b82f6;
+  --accent-glow: rgba(59,130,246,0.2);
+  --filter-warn: #ef4444;
+  --filter-ok: #22c55e;
+  --filter-mid: #eab308;
+  --radius: 14px;
+  --radius-sm: 8px;
+  --font-data: 'DM Mono', monospace;
+  --font-ui: 'Outfit', sans-serif;
 }
-.light {
-  --bg: #f0f2f5;
-  --bg-card: #ffffff;
-  --bg-card-off: #e8eaed;
-  --text: #1a1a2e;
-  --text-dim: #666;
-  --border: #ddd;
-  --shadow: 0 2px 12px rgba(0,0,0,0.08);
-}
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-ui);
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
-  transition: background 0.3s, color 0.3s;
+  min-height: 100dvh;
+  overflow-x: hidden;
 }
-
-/* Header */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    linear-gradient(rgba(59,130,246,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
 .header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(10,15,26,0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 16px;
+}
+.header-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
+  margin-bottom: 10px;
 }
-.header h1 { font-size: 1.2rem; font-weight: 600; }
-.header-right { display: flex; align-items: center; gap: 12px; }
-.refresh-info { font-size: 0.75rem; color: var(--text-dim); }
-.theme-btn {
-  background: none; border: none; color: var(--text); font-size: 1.3rem;
-  cursor: pointer; padding: 4px;
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.refresh-btn {
-  background: var(--accent); color: #fff; border: none; border-radius: 8px;
-  padding: 6px 14px; font-size: 0.8rem; cursor: pointer; font-weight: 500;
+.logo-icon {
+  width: 28px;
+  height: 28px;
+  background: linear-gradient(135deg, var(--accent), #8b5cf6);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
 }
-.refresh-btn:hover { background: var(--accent-hover); }
-
-/* Grid */
+.logo-text {
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: -0.02em;
+}
+.header-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.update-time {
+  font-family: var(--font-data);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+.refresh-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--aqi-good);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+.refresh-dot.loading {
+  background: var(--accent);
+  animation: spin-dot 0.8s linear infinite;
+}
+@keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+@keyframes spin-dot { to { transform: rotate(360deg); } }
+.quick-actions {
+  display: flex;
+  gap: 8px;
+}
+.quick-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.quick-btn:active { transform: scale(0.96); }
+.quick-btn.on-all { border-color: rgba(34,197,94,0.3); color: var(--aqi-good); }
+.quick-btn.on-all:active { background: rgba(34,197,94,0.1); }
+.quick-btn.off-all { border-color: rgba(239,68,68,0.2); color: var(--filter-warn); }
+.quick-btn.off-all:active { background: rgba(239,68,68,0.1); }
+.quick-btn .icon { font-size: 0.9rem; }
+.summary {
+  display: flex;
+  gap: 6px;
+  padding: 8px 16px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  position: relative;
+  z-index: 1;
+}
+.summary::-webkit-scrollbar { display: none; }
+.summary-chip {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 20px;
+  font-family: var(--font-data);
+  font-size: 0.65rem;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.summary-chip .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
 .grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-  padding: 16px 20px 100px;
-  max-width: 1200px;
-  margin: 0 auto;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 10px 12px 100px;
+  position: relative;
+  z-index: 1;
 }
-@media (min-width: 640px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 960px) { .grid { grid-template-columns: repeat(3, 1fr); } }
-
-/* Card */
+@media (min-width: 768px) { .grid { grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 12px 16px 100px; } }
+@media (min-width: 1200px) { .grid { grid-template-columns: repeat(4, 1fr); max-width: 1400px; margin: 0 auto; } }
 .card {
-  background: var(--bg-card);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
-  box-shadow: var(--shadow);
-  transition: background 0.3s, opacity 0.3s;
+  padding: 12px;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  animation: card-in 0.3s ease both;
 }
-.card.offline { opacity: 0.5; }
-.card.powered-off { background: var(--bg-card-off); }
-
-.card-header {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-bottom: 16px;
+.card:nth-child(1) { animation-delay: 0s; }
+.card:nth-child(2) { animation-delay: 0.04s; }
+.card:nth-child(3) { animation-delay: 0.04s; }
+.card:nth-child(4) { animation-delay: 0.08s; }
+.card:nth-child(5) { animation-delay: 0.08s; }
+.card:nth-child(6) { animation-delay: 0.12s; }
+.card:nth-child(7) { animation-delay: 0.12s; }
+@keyframes card-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  border-radius: var(--radius) var(--radius) 0 0;
+  transition: background 0.3s;
 }
-.device-name { font-weight: 600; font-size: 1rem; }
-.status-badge {
-  font-size: 0.7rem; padding: 3px 8px; border-radius: 20px; font-weight: 500;
+.card.aqi-good-card::before { background: var(--aqi-good); }
+.card.aqi-mod-card::before { background: var(--aqi-mod); }
+.card.aqi-unhealthy-card::before { background: var(--aqi-unhealthy); }
+.card.aqi-hazard-card::before { background: var(--aqi-hazard); }
+.card.offline-card { opacity: 0.4; }
+.card.off-card { opacity: 0.65; }
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
 }
-.status-badge.online { background: var(--green); color: #fff; }
-.status-badge.offline { background: var(--red); color: #fff; }
-.status-badge.off { background: var(--text-dim); color: #fff; }
-.protocol-badge {
-  font-size: 0.6rem; color: var(--text-dim); margin-left: 6px;
+.room-name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  max-width: 70%;
 }
-
-/* AQI display */
-.aqi-section { text-align: center; margin-bottom: 16px; }
-.aqi-value {
-  font-size: 3.5rem; font-weight: 700; line-height: 1;
-  transition: color 0.3s;
+.power-toggle {
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
 }
-.aqi-label { font-size: 0.75rem; color: var(--text-dim); margin-top: 4px; }
-.aqi-good { color: var(--green); }
-.aqi-moderate { color: var(--yellow); }
-.aqi-unhealthy { color: var(--orange); }
-.aqi-bad { color: var(--red); }
-
-/* Stats row */
-.stats {
-  display: flex; justify-content: space-around; margin-bottom: 16px;
-  padding: 10px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+.power-toggle.on { background: var(--aqi-good); }
+.power-toggle.off { background: var(--text-muted); }
+.power-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  transition: left 0.2s;
 }
-.stat { text-align: center; }
-.stat-value { font-size: 1.1rem; font-weight: 600; }
-.stat-label { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
-
-/* Filter bar */
-.filter-bar {
-  margin-bottom: 16px;
+.power-toggle.on::after { left: 16px; }
+.power-toggle.off::after { left: 2px; }
+.power-toggle:active { transform: scale(0.9); }
+.aqi-display { text-align: center; margin: 4px 0 8px; cursor: pointer; }
+.aqi-num {
+  font-family: var(--font-data);
+  font-size: 2.4rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
 }
-.filter-label { font-size: 0.7rem; color: var(--text-dim); margin-bottom: 4px; }
-.filter-track {
-  width: 100%; height: 6px; background: var(--border); border-radius: 3px;
+.aqi-num.active { animation: breathe 3s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+.aqi-label {
+  font-size: 0.55rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 2px;
+}
+.aqi-good-color { color: var(--aqi-good); }
+.aqi-mod-color { color: var(--aqi-mod); }
+.aqi-unhealthy-color { color: var(--aqi-unhealthy); }
+.aqi-hazard-color { color: var(--aqi-hazard); }
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.stat-item { text-align: center; flex: 1; }
+.stat-val { font-family: var(--font-data); font-size: 0.7rem; font-weight: 500; }
+.stat-lbl { font-size: 0.5rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.filter-section { margin-bottom: 8px; }
+.filter-bar-track {
+  width: 100%; height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 2px;
   overflow: hidden;
 }
-.filter-fill {
-  height: 100%; border-radius: 3px; transition: width 0.5s, background 0.3s;
+.filter-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+.filter-meta { display: flex; justify-content: space-between; margin-top: 3px; }
+.filter-pct { font-family: var(--font-data); font-size: 0.55rem; font-weight: 500; }
+.filter-hrs { font-size: 0.5rem; color: var(--text-muted); }
+.filter-warning {
+  background: repeating-linear-gradient(-45deg, rgba(239,68,68,0.08), rgba(239,68,68,0.08) 4px, transparent 4px, transparent 8px);
+  border: 1px solid rgba(239,68,68,0.3);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  animation: warn-flash 2s ease-in-out infinite;
 }
-
-/* Controls */
-.controls { display: flex; flex-direction: column; gap: 10px; }
-.control-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+@keyframes warn-flash { 0%, 100% { border-color: rgba(239,68,68,0.3); } 50% { border-color: rgba(239,68,68,0.7); } }
+.filter-warning .warn-text {
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: var(--filter-warn);
+  letter-spacing: 0.02em;
 }
-.control-label { font-size: 0.8rem; color: var(--text-dim); min-width: 50px; }
-
-/* Power button */
-.power-btn {
-  width: 100%; padding: 12px; border-radius: 10px; border: none;
-  font-size: 0.95rem; font-weight: 600; cursor: pointer;
-  transition: background 0.2s, transform 0.1s;
-}
-.power-btn:active { transform: scale(0.97); }
-.power-btn.on { background: var(--red); color: #fff; }
-.power-btn.off { background: var(--green); color: #fff; }
-.power-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-/* Mode selector */
-.mode-btns { display: flex; gap: 4px; flex: 1; }
+.mode-row { display: flex; gap: 3px; margin-bottom: 6px; }
 .mode-btn {
-  flex: 1; padding: 8px 4px; border-radius: 8px;
-  border: 1px solid var(--border); background: transparent;
-  color: var(--text-dim); font-size: 0.7rem; cursor: pointer;
-  transition: all 0.2s;
+  flex: 1;
+  padding: 6px 2px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 0.58rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
 }
 .mode-btn.active {
-  background: var(--accent); color: #fff; border-color: var(--accent);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+  box-shadow: 0 0 12px var(--accent-glow);
 }
-.mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-/* Fan slider */
+.mode-btn:active { transform: scale(0.93); }
+.mode-btn:disabled { opacity: 0.3; pointer-events: none; }
+.card-expand-area {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+.card.expanded .card-expand-area { max-height: 120px; }
+.fan-row { display: flex; align-items: center; gap: 6px; }
+.fan-label { font-size: 0.55rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .fan-slider {
-  flex: 1; -webkit-appearance: none; height: 6px; border-radius: 3px;
-  background: var(--border); outline: none;
+  flex: 1;
+  -webkit-appearance: none;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.08);
+  outline: none;
 }
 .fan-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
-  background: var(--accent); cursor: pointer;
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  box-shadow: 0 0 8px var(--accent-glow);
 }
-.fan-level-val { font-size: 0.9rem; font-weight: 600; min-width: 24px; text-align: center; }
-
-/* Toggle buttons */
-.toggle-row { display: flex; gap: 8px; }
-.toggle-btn {
-  flex: 1; padding: 8px; border-radius: 8px;
-  border: 1px solid var(--border); background: transparent;
-  color: var(--text-dim); font-size: 0.75rem; cursor: pointer;
-  transition: all 0.2s;
+.fan-val { font-family: var(--font-data); font-size: 0.65rem; color: var(--text-secondary); min-width: 16px; text-align: right; }
+.loading-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  gap: 16px;
+  position: relative;
+  z-index: 1;
 }
-.toggle-btn.active {
-  background: var(--accent); color: #fff; border-color: var(--accent);
+.loading-rings { width: 48px; height: 48px; position: relative; }
+.loading-rings::before, .loading-rings::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
 }
-
-/* Loading */
-.loading {
-  text-align: center; padding: 60px 20px; color: var(--text-dim);
-}
-.loading .spinner {
-  width: 40px; height: 40px; border: 3px solid var(--border);
-  border-top-color: var(--accent); border-radius: 50%;
-  animation: spin 0.8s linear infinite; margin: 0 auto 16px;
-}
+.loading-rings::before { border-top-color: var(--accent); animation: spin 1s linear infinite; }
+.loading-rings::after { border-bottom-color: rgba(59,130,246,0.3); animation: spin 1.5s linear infinite reverse; }
 @keyframes spin { to { transform: rotate(360deg); } }
-
-/* Error banner */
-.error-banner {
-  background: var(--red); color: #fff; padding: 10px 20px;
-  text-align: center; font-size: 0.85rem; display: none;
+.loading-text { font-size: 0.8rem; color: var(--text-secondary); letter-spacing: 0.03em; }
+.error-bar {
+  background: rgba(239,68,68,0.1);
+  border-bottom: 1px solid rgba(239,68,68,0.2);
+  padding: 8px 16px;
+  font-size: 0.7rem;
+  color: var(--filter-warn);
+  text-align: center;
+  display: none;
+  position: relative;
+  z-index: 1;
 }
-
-/* Motor speed */
-.motor-info {
-  display: flex; justify-content: space-between; align-items: center;
-  font-size: 0.75rem; color: var(--text-dim); margin-bottom: 8px;
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(100px);
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 500;
+  z-index: 999;
+  opacity: 0;
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+.toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+.toast.success {
+  background: rgba(34,197,94,0.9);
+  color: white;
+}
+.toast.error {
+  background: rgba(239,68,68,0.9);
+  color: white;
 }
 </style>
 </head>
 <body>
-
 <div class="header">
-  <h1>Air Purifier Control</h1>
-  <div class="header-right">
-    <span class="refresh-info" id="refreshInfo">Loading...</span>
-    <button class="refresh-btn" onclick="fetchStatus()">Refresh</button>
-    <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">&#9790;</button>
+  <div class="header-top">
+    <div class="logo">
+      <div class="logo-icon">&#x1F32C;</div>
+      <span class="logo-text">Air Quality</span>
+    </div>
+    <div class="header-meta">
+      <span class="update-time" id="updateTime">--:--</span>
+      <div class="refresh-dot" id="refreshDot"></div>
+    </div>
+  </div>
+  <div class="quick-actions">
+    <button class="quick-btn on-all" onclick="allOn()"><span class="icon">&#9654;</span> All On</button>
+    <button class="quick-btn off-all" onclick="allOff()"><span class="icon">&#9724;</span> All Off</button>
+    <button class="quick-btn" onclick="fetchStatus()"><span class="icon">&#x21BB;</span> Refresh</button>
   </div>
 </div>
-
-<div class="error-banner" id="errorBanner"></div>
-
-<div class="loading" id="loadingState">
-  <div class="spinner"></div>
-  <div>Connecting to purifiers...</div>
+<div class="error-bar" id="errorBar"></div>
+<div id="summaryBar" class="summary"></div>
+<div class="loading-screen" id="loadingScreen">
+  <div class="loading-rings"></div>
+  <div class="loading-text">Connecting to purifiers...</div>
 </div>
-
 <div class="grid" id="grid" style="display:none;"></div>
-
+<div class="toast" id="toast"></div>
 <script>
-const API_BASE = '';
+const API = window.location.pathname.replace(/\/+$/, '');
 let devices = [];
 let refreshTimer = null;
-const REFRESH_INTERVAL = 15000;
+let expandedCard = null;
 
-// Theme
-function toggleTheme() {
-  document.body.classList.toggle('light');
-  const isLight = document.body.classList.contains('light');
-  localStorage.setItem('purifier-theme', isLight ? 'light' : 'dark');
-  document.getElementById('themeBtn').textContent = isLight ? '\u2600' : '\u263E';
+function aqiColor(aqi) {
+  if (aqi == null) return 'var(--text-muted)';
+  if (aqi <= 50) return 'var(--aqi-good)';
+  if (aqi <= 100) return 'var(--aqi-mod)';
+  if (aqi <= 150) return 'var(--aqi-unhealthy)';
+  return 'var(--aqi-hazard)';
 }
-(function initTheme() {
-  if (localStorage.getItem('purifier-theme') === 'light') {
-    document.body.classList.add('light');
-    document.getElementById('themeBtn').textContent = '\u2600';
-  }
-})();
-
-// AQI helpers
-function aqiClass(aqi) {
+function aqiCls(aqi) {
   if (aqi == null) return '';
   if (aqi <= 50) return 'aqi-good';
-  if (aqi <= 100) return 'aqi-moderate';
+  if (aqi <= 100) return 'aqi-mod';
   if (aqi <= 150) return 'aqi-unhealthy';
-  return 'aqi-bad';
+  return 'aqi-hazard';
 }
-function aqiText(aqi) {
+function aqiLabel(aqi) {
   if (aqi == null) return 'N/A';
   if (aqi <= 50) return 'Good';
   if (aqi <= 100) return 'Moderate';
@@ -269,166 +472,253 @@ function aqiText(aqi) {
   return 'Hazardous';
 }
 function filterColor(pct) {
-  if (pct > 50) return 'var(--green)';
-  if (pct > 20) return 'var(--yellow)';
-  return 'var(--red)';
+  if (pct == null) return 'var(--text-muted)';
+  if (pct > 50) return 'var(--filter-ok)';
+  if (pct > 15) return 'var(--filter-mid)';
+  return 'var(--filter-warn)';
+}
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+function renderSummary() {
+  const bar = document.getElementById('summaryBar');
+  const online = devices.filter(d => d.online).length;
+  const running = devices.filter(d => d.online && d.power).length;
+  const aqis = devices.filter(d => d.aqi != null);
+  const avgAqi = aqis.length ? Math.round(aqis.reduce((s, d) => s + d.aqi, 0) / aqis.length) : 0;
+  const lowFilter = devices.filter(d => d.filter_life != null && d.filter_life <= 15);
+  bar.textContent = '';
+  const chips = [
+    {text: running + '/' + online + ' running', color: 'var(--aqi-good)'},
+    {text: 'Avg PM2.5: ' + avgAqi, color: aqiColor(avgAqi)},
+  ];
+  if (lowFilter.length > 0) {
+    chips.push({text: lowFilter.length + ' filter' + (lowFilter.length > 1 ? 's' : '') + ' low', color: 'var(--filter-warn)', warn: true});
+  }
+  chips.forEach(c => {
+    const chip = document.createElement('div');
+    chip.className = 'summary-chip';
+    if (c.warn) chip.style.cssText = 'border-color:rgba(239,68,68,0.3);color:var(--filter-warn)';
+    const dot = document.createElement('div');
+    dot.className = 'dot';
+    dot.style.background = c.color;
+    chip.appendChild(dot);
+    chip.appendChild(document.createTextNode(c.text));
+    bar.appendChild(chip);
+  });
+}
+
+function createCard(d) {
+  const isOn = d.online && d.power;
+  const ac = aqiCls(d.aqi);
+  const cardCls = !d.online ? 'offline-card' : (!d.power ? 'off-card' : ac + '-card');
+  const modes = ['Auto', 'Silent', 'Favorite', 'Fan'];
+  const curMode = (d.mode || '').toLowerCase();
+  const isExpanded = expandedCard === d.id;
+  const needsFilter = d.filter_life != null && d.filter_life <= 15;
+
+  const card = document.createElement('div');
+  card.className = 'card ' + cardCls + (isExpanded ? ' expanded' : '');
+
+  // Header
+  const head = document.createElement('div');
+  head.className = 'card-head';
+  const nameEl = document.createElement('div');
+  nameEl.className = 'room-name';
+  nameEl.textContent = d.name;
+  const toggle = document.createElement('button');
+  toggle.className = 'power-toggle ' + (isOn ? 'on' : 'off');
+  toggle.disabled = !d.online;
+  toggle.onclick = function(e) { e.stopPropagation(); togglePower(d.id, isOn); };
+  head.appendChild(nameEl);
+  head.appendChild(toggle);
+  card.appendChild(head);
+
+  // Filter warning
+  if (needsFilter) {
+    const warn = document.createElement('div');
+    warn.className = 'filter-warning';
+    const wIcon = document.createElement('span');
+    wIcon.textContent = '\u26A0';
+    wIcon.style.fontSize = '0.7rem';
+    const wText = document.createElement('span');
+    wText.className = 'warn-text';
+    wText.textContent = 'FILTER ' + d.filter_life + '%' + (d.filter_life === 0 ? ' \u2014 REPLACE NOW' : '');
+    warn.appendChild(wIcon);
+    warn.appendChild(wText);
+    card.appendChild(warn);
+  }
+
+  // AQI
+  const aqiDiv = document.createElement('div');
+  aqiDiv.className = 'aqi-display';
+  aqiDiv.onclick = function() { toggleExpand(d.id); };
+  const aqiNum = document.createElement('div');
+  aqiNum.className = 'aqi-num ' + ac + '-color' + (isOn ? ' active' : '');
+  aqiNum.textContent = d.aqi != null ? d.aqi : '--';
+  const aqiLbl = document.createElement('div');
+  aqiLbl.className = 'aqi-label';
+  aqiLbl.textContent = 'PM2.5 \u00B7 ' + aqiLabel(d.aqi);
+  aqiDiv.appendChild(aqiNum);
+  aqiDiv.appendChild(aqiLbl);
+  card.appendChild(aqiDiv);
+
+  // Stats
+  const stats = document.createElement('div');
+  stats.className = 'stats-row';
+  [{v: d.temperature != null ? d.temperature + '\u00B0' : '--', l: 'Temp'},
+   {v: d.humidity != null ? d.humidity + '%' : '--', l: 'Hum'},
+   {v: d.motor_speed != null ? d.motor_speed : '--', l: 'RPM'}].forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'stat-item';
+    const val = document.createElement('div');
+    val.className = 'stat-val';
+    val.textContent = s.v;
+    const lbl = document.createElement('div');
+    lbl.className = 'stat-lbl';
+    lbl.textContent = s.l;
+    item.appendChild(val);
+    item.appendChild(lbl);
+    stats.appendChild(item);
+  });
+  card.appendChild(stats);
+
+  // Filter bar (non-warning)
+  if (d.filter_life != null && !needsFilter) {
+    const fsec = document.createElement('div');
+    fsec.className = 'filter-section';
+    const track = document.createElement('div');
+    track.className = 'filter-bar-track';
+    const fill = document.createElement('div');
+    fill.className = 'filter-bar-fill';
+    fill.style.width = d.filter_life + '%';
+    fill.style.background = filterColor(d.filter_life);
+    track.appendChild(fill);
+    fsec.appendChild(track);
+    const meta = document.createElement('div');
+    meta.className = 'filter-meta';
+    const pct = document.createElement('span');
+    pct.className = 'filter-pct';
+    pct.style.color = filterColor(d.filter_life);
+    pct.textContent = d.filter_life + '%';
+    const hrs = document.createElement('span');
+    hrs.className = 'filter-hrs';
+    hrs.textContent = d.filter_hours_used != null ? d.filter_hours_used + 'h' : '';
+    meta.appendChild(pct);
+    meta.appendChild(hrs);
+    fsec.appendChild(meta);
+    card.appendChild(fsec);
+  }
+
+  // Mode buttons
+  const modeRow = document.createElement('div');
+  modeRow.className = 'mode-row';
+  modes.forEach(m => {
+    const btn = document.createElement('button');
+    btn.className = 'mode-btn' + (curMode === m.toLowerCase() ? ' active' : '');
+    btn.textContent = m;
+    btn.disabled = !isOn;
+    btn.onclick = function(e) { e.stopPropagation(); setMode(d.id, m.toLowerCase()); };
+    modeRow.appendChild(btn);
+  });
+  card.appendChild(modeRow);
+
+  // Expandable fan control
+  const expandArea = document.createElement('div');
+  expandArea.className = 'card-expand-area';
+  const fanRow = document.createElement('div');
+  fanRow.className = 'fan-row';
+  fanRow.style.paddingTop = '6px';
+  const fanLbl = document.createElement('span');
+  fanLbl.className = 'fan-label';
+  fanLbl.textContent = 'Fan';
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.className = 'fan-slider';
+  slider.min = '0';
+  slider.max = '14';
+  slider.value = d.fan_level || 0;
+  slider.disabled = !isOn;
+  const fanVal = document.createElement('span');
+  fanVal.className = 'fan-val';
+  fanVal.textContent = d.fan_level || 0;
+  slider.oninput = function() { fanVal.textContent = this.value; };
+  slider.onchange = function(e) { e.stopPropagation(); setFan(d.id, this.value); };
+  fanRow.appendChild(fanLbl);
+  fanRow.appendChild(slider);
+  fanRow.appendChild(fanVal);
+  expandArea.appendChild(fanRow);
+  card.appendChild(expandArea);
+
+  card.addEventListener('click', function() { toggleExpand(d.id); });
+  return card;
 }
 
 function renderDevices() {
   const grid = document.getElementById('grid');
-  grid.innerHTML = '';
-
-  if (devices.length === 0) {
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--text-dim);">No devices configured. Edit <code>devices.json</code> to add your purifiers.</div>';
-    return;
-  }
-
-  devices.forEach(d => {
-    const isOn = d.online && d.power;
-    const cardClass = !d.online ? 'card offline' : (!d.power ? 'card powered-off' : 'card');
-    const modes = ['auto', 'silent', 'favorite', 'fan'];
-    const currentMode = (d.mode || '').toLowerCase().replace('operationmode.', '');
-
-    const card = document.createElement('div');
-    card.className = cardClass;
-    card.innerHTML = `
-      <div class="card-header">
-        <div>
-          <span class="device-name">${esc(d.name)}</span>
-          <span class="protocol-badge">${d.protocol || ''}</span>
-        </div>
-        <span class="status-badge ${d.online ? (d.power ? 'online' : 'off') : 'offline'}">
-          ${d.online ? (d.power ? 'ON' : 'OFF') : 'OFFLINE'}
-        </span>
-      </div>
-
-      <div class="aqi-section">
-        <div class="aqi-value ${aqiClass(d.aqi)}">${d.aqi != null ? d.aqi : '--'}</div>
-        <div class="aqi-label">PM2.5 &middot; ${aqiText(d.aqi)}</div>
-      </div>
-
-      <div class="stats">
-        <div class="stat">
-          <div class="stat-value">${d.temperature != null ? d.temperature + '&deg;' : '--'}</div>
-          <div class="stat-label">Temp</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">${d.humidity != null ? d.humidity + '%' : '--'}</div>
-          <div class="stat-label">Humidity</div>
-        </div>
-        <div class="stat">
-          <div class="stat-value">${d.motor_speed != null ? d.motor_speed : '--'}</div>
-          <div class="stat-label">RPM</div>
-        </div>
-      </div>
-
-      ${d.filter_life != null ? `
-      <div class="filter-bar">
-        <div class="filter-label">Filter life: ${d.filter_life}%${d.filter_hours_used != null ? ' (' + d.filter_hours_used + 'h used)' : ''}</div>
-        <div class="filter-track">
-          <div class="filter-fill" style="width:${d.filter_life}%;background:${filterColor(d.filter_life)}"></div>
-        </div>
-      </div>` : ''}
-
-      <div class="controls">
-        <button class="power-btn ${isOn ? 'on' : 'off'}" onclick="togglePower('${d.id}', ${isOn})"
-                ${!d.online ? 'disabled' : ''}>
-          ${isOn ? 'Turn Off' : 'Turn On'}
-        </button>
-
-        <div class="control-row">
-          <span class="control-label">Mode</span>
-          <div class="mode-btns">
-            ${modes.map(m => `
-              <button class="mode-btn ${currentMode === m ? 'active' : ''}"
-                      onclick="setMode('${d.id}','${m}')"
-                      ${!isOn ? 'disabled' : ''}>${m.charAt(0).toUpperCase() + m.slice(1)}</button>
-            `).join('')}
-          </div>
-        </div>
-
-        <div class="control-row">
-          <span class="control-label">Fan</span>
-          <input type="range" class="fan-slider" min="0" max="14"
-                 value="${d.fan_level || 0}"
-                 oninput="this.nextElementSibling.textContent=this.value"
-                 onchange="setFanLevel('${d.id}', this.value)"
-                 ${!isOn ? 'disabled' : ''}>
-          <span class="fan-level-val">${d.fan_level || 0}</span>
-        </div>
-
-        <div class="toggle-row">
-          <button class="toggle-btn ${d.buzzer ? 'active' : ''}"
-                  onclick="toggleBuzzer('${d.id}', ${!d.buzzer})"
-                  ${!d.online ? 'disabled' : ''}>
-            Buzzer ${d.buzzer ? 'On' : 'Off'}
-          </button>
-          <button class="toggle-btn ${d.led ? 'active' : ''}"
-                  onclick="toggleLed('${d.id}', ${!d.led})"
-                  ${!d.online ? 'disabled' : ''}>
-            LED ${d.led ? 'On' : 'Off'}
-          </button>
-        </div>
-      </div>
-    `;
-    grid.appendChild(card);
-  });
+  grid.textContent = '';
+  devices.forEach(d => grid.appendChild(createCard(d)));
 }
 
-function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s || '';
-  return d.innerHTML;
+function toggleExpand(id) {
+  expandedCard = expandedCard === id ? null : id;
+  renderDevices();
 }
 
 async function fetchStatus() {
+  const dot = document.getElementById('refreshDot');
+  dot.classList.add('loading');
   try {
-    const res = await fetch(API_BASE + '/api/status');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const res = await fetch(API + '/api/status');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     devices = await res.json();
-    document.getElementById('loadingState').style.display = 'none';
+    document.getElementById('loadingScreen').style.display = 'none';
     document.getElementById('grid').style.display = '';
-    document.getElementById('errorBanner').style.display = 'none';
+    document.getElementById('errorBar').style.display = 'none';
+    renderSummary();
     renderDevices();
-    document.getElementById('refreshInfo').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    document.getElementById('updateTime').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
   } catch (e) {
-    document.getElementById('errorBanner').textContent = 'Connection error: ' + e.message;
-    document.getElementById('errorBanner').style.display = '';
-    // Still show grid if we had previous data
+    document.getElementById('errorBar').textContent = 'Connection lost: ' + e.message;
+    document.getElementById('errorBar').style.display = '';
     if (devices.length > 0) {
-      document.getElementById('loadingState').style.display = 'none';
+      document.getElementById('loadingScreen').style.display = 'none';
       document.getElementById('grid').style.display = '';
     }
   }
+  dot.classList.remove('loading');
   clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(fetchStatus, REFRESH_INTERVAL);
+  refreshTimer = setTimeout(fetchStatus, 15000);
 }
 
-async function apiPost(url, body) {
+let pendingRefresh = null;
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  setTimeout(() => { t.className = 'toast'; }, 2000);
+}
+async function post(url, body) {
   try {
-    const res = await fetch(API_BASE + url, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(body)
-    });
+    const res = await fetch(API + url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {}) });
     const data = await res.json();
     if (!res.ok) {
-      console.error('API error:', data.error);
+      showToast('Error: ' + (data.error || 'Unknown'), 'error');
+    } else {
+      showToast('Command sent', 'success');
     }
-    // Refresh after command
-    setTimeout(fetchStatus, 1000);
+    clearTimeout(pendingRefresh);
+    pendingRefresh = setTimeout(fetchStatus, 2000);
   } catch (e) {
-    console.error('API call failed:', e);
+    showToast('Connection failed', 'error');
   }
 }
 
-function togglePower(id, isOn) { apiPost(`/api/device/${id}/power`, {action: isOn ? 'off' : 'on'}); }
-function setMode(id, mode) { apiPost(`/api/device/${id}/mode`, {mode}); }
-function setFanLevel(id, level) { apiPost(`/api/device/${id}/fan_level`, {level: parseInt(level)}); }
-function toggleBuzzer(id, enabled) { apiPost(`/api/device/${id}/buzzer`, {enabled}); }
-function toggleLed(id, enabled) { apiPost(`/api/device/${id}/led`, {enabled}); }
+function togglePower(id, isOn) { post('/api/device/' + id + '/power', {action: isOn ? 'off' : 'on'}); }
+function setMode(id, mode) { post('/api/device/' + id + '/mode', {mode: mode}); }
+function setFan(id, level) { post('/api/device/' + id + '/fan_level', {level: parseInt(level)}); }
+function allOn() { post('/api/all_on'); }
+function allOff() { post('/api/all_off'); }
 
-// Start
 fetchStatus();
 </script>
 </body>

@@ -1,35 +1,33 @@
 # Project Status
 
-**Last updated:** 2026-03-31
-**State:** IDLE — all 7/7 tokens working, waiting for Pi 5 purchase
+**Last updated:** 2026-04-01
+**State:** ACTIVE — Flask dashboard running, remote access live
 
-## Completed (2026-03-31)
+## Completed
 
-- Installed python-miio 0.5.12 (netifaces-plus workaround for Python 3.14)
-- Extracted tokens for 5 Thai-set purifiers via Xiaomi cloud (passToken + micloud, 2FA via Playwright)
-- Provisioned both China-set 4 Pros onto WiFi via raw miio protocol (`provision_china.py`)
-- Solved China 4 Pro token rotation: provisioned with Xavier's uid → devices registered to SG cloud account → stable cloud-managed tokens
-- Verified ALL 7/7 tokens work end-to-end (raw miio info command succeeds)
-- Removed all purifiers from Deco Device Isolation
-- Set DHCP reservations for all 7 purifiers
+- All 7 purifier tokens extracted and verified (5 Thai-set cloud + 2 China-set uid provisioning)
+- China 4 Pro token rotation solved: provisioned with uid → registered to SG cloud → stable tokens
+- Flask dashboard rewritten with generic MiOT protocol (all models work including xiaomi.airp.va2b)
+- Background polling: devices polled every 10s, API returns cached data instantly (~0.2s vs 3-8s)
+- Remote access: SSH tunnel to VPS, nginx proxy at https://app.xavbuilds.com/purifier/
+- Basic auth on remote endpoint (admin/****)
+- Deco: purifiers un-isolated, DHCP reservations set for all 7
+- New dashboard UI: mobile-first, AQI color coding, filter warnings, All On/Off
 
-## Blockers
+## How to Run
 
-None. All tokens stable and verified.
+Double-click `start.bat` — starts Flask app + SSH tunnel with auto-reconnect.
+- Local: http://localhost:5000
+- Remote: https://app.xavbuilds.com/purifier/
 
-## Current Priorities
+## Hardware Decision (pending)
 
-1. China SIM arrives → create CN account → stabilize China 4 Pro tokens
-2. Order Pi 5 8GB kit (~$300 SGD)
-3. Flash HA OS → HACS + xiaomi_miot_auto → add all 7 purifiers
-4. Build Jeane-friendly dashboard
+Pi 5 8GB ordered but under reconsideration. UPS for Deco modem is higher priority.
+Flask dashboard on laptop covers burning season use case without Pi.
 
 ## Key Decisions
 
-- Pivoted from custom Flask app to Home Assistant on Pi 5 8GB
-- `xiaomi_miot_auto` (HACS) as default integration, not built-in Xiaomi Miio
-- Remote access via WireGuard to VPS (skip Nabu Casa)
-- Separate Telegram bot for HA (not xavier-assistant)
-- Ethernet for Pi, not WiFi
-- Pi justification: purifier control + AdGuard Home + WireGuard + BLE sensors + Google Home integration
-- Camera dashboard is NOT viable (Xiaomi cameras don't expose RTSP)
+- Generic MiOT protocol (Device.send) instead of model-specific python-miio classes
+- Background polling thread with cached status (instant API responses)
+- SSH reverse tunnel for remote access (no VPN, no Nabu Casa)
+- Basic auth on nginx for remote security
