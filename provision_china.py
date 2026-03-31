@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 # Your home WiFi credentials (IOT network)
 WIFI_SSID = ""  # your IoT WiFi SSID
 WIFI_PASSWORD = ""  # your IoT WiFi password
+XIAOMI_UID = 0  # your Xiaomi account userId (from cloud extraction)
 
 # Purifier's IP in AP mode
 AP_IP = "192.168.99.1"
@@ -164,7 +165,8 @@ def main():
     print(f"  Sending WiFi credentials for '{WIFI_SSID}'...")
     wifi_result = send_command(sock, AP_IP, token_bytes, device_id, stamp + 1,
                                "miIO.config_router",
-                               {"ssid": WIFI_SSID, "passwd": WIFI_PASSWORD, "uid": 0})
+                               {"ssid": WIFI_SSID, "passwd": WIFI_PASSWORD, "uid": XIAOMI_UID,
+                                "config_type": "app", "country_domain": "sg"})
     print(f"  Response: {wifi_result}")
     print()
 

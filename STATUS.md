@@ -1,23 +1,21 @@
 # Project Status
 
 **Last updated:** 2026-03-31
-**State:** IDLE — waiting for China SIM (~Apr 4) and Pi 5 purchase
+**State:** IDLE — all 7/7 tokens working, waiting for Pi 5 purchase
 
 ## Completed (2026-03-31)
 
 - Installed python-miio 0.5.12 (netifaces-plus workaround for Python 3.14)
 - Extracted tokens for 5 Thai-set purifiers via Xiaomi cloud (passToken + micloud, 2FA via Playwright)
 - Provisioned both China-set 4 Pros onto WiFi via raw miio protocol (`provision_china.py`)
-- Verified 5/7 tokens work end-to-end (raw miio info command succeeds)
-- China 4 Pro tokens rotate after WiFi join — need China Xiaomi account for stable tokens
-- Ordered China Telecom tourist SIM from Shopee (154 baht, arriving ~Apr 4)
+- Solved China 4 Pro token rotation: provisioned with Xavier's uid → devices registered to SG cloud account → stable cloud-managed tokens
+- Verified ALL 7/7 tokens work end-to-end (raw miio info command succeeds)
 - Removed all purifiers from Deco Device Isolation
 - Set DHCP reservations for all 7 purifiers
-- Deco Parental Controls DNS block on China 4 Pros (ot.io.mi.com, ott.io.mi.com, io.mi.com)
 
 ## Blockers
 
-- **China 4 Pro tokens:** Need China SIM → create CN Xiaomi account → add devices → extract stable tokens via cloud. SIM arriving ~Apr 4.
+None. All tokens stable and verified.
 
 ## Current Priorities
 
