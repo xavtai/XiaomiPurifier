@@ -1,67 +1,62 @@
-# Xiaomi Air Purifier — Token Extraction & Provisioning Tools
+# Xiaomi Air Purifier Control
 
-Tools for extracting device tokens and provisioning Xiaomi air purifiers for local control. Tokens are needed by Home Assistant or any local control system using the miio protocol.
+Local dashboard for controlling 7 Xiaomi air purifiers over WiFi using the MiOT protocol. No Xiaomi cloud or app required for control. Works with China-set, Thailand-set, or any region.
 
-**Status:** Pivoted from custom Flask app to Home Assistant on Raspberry Pi 5. The Flask app (`app.py`) is archived — not actively developed. The token extraction and provisioning scripts are the active tools.
-
-## Tools
-
-### `extract_tokens.py` — Cloud token extraction (Thai-set / cloud-registered devices)
-
-Logs into Xiaomi cloud to retrieve tokens for devices registered to your account.
-Handles 2FA via browser redirect.
+## Quick Start
 
 ```bash
-pip install python-miio requests
+pip install -r requirements.txt
+python app.py
+# Open http://localhost:5000 on your phone (same WiFi)
+```
+
+Or double-click `start.bat` to also start the SSH tunnel for remote access.
+
+## Dashboard
+
+- Real-time AQI, temperature, humidity, motor speed, filter life for all 7 purifiers
+- Power on/off, mode switching (Auto/Silent/Custom/Fan), fan level control
+- All On / All Off buttons
+- Background polling every 10s — instant page loads
+- Mobile-first responsive layout
+- Remote access at `https://app.xavbuilds.com/purifier/` (basic auth)
+
+## Setup Tools
+
+### Token Extraction (cloud-registered devices)
+```bash
 python extract_tokens.py
 ```
+Logs into Xiaomi cloud to retrieve device tokens. Handles 2FA via browser. The proven method for 2FA accounts is passToken injection via Playwright + micloud.
 
-Note: For accounts with email-based 2FA, the script's retry approach may fail.
-The proven method is passToken injection via Playwright + micloud. See project memory for details.
-
-### `provision_china.py` — WiFi provisioning (China-set / unregistered devices)
-
-Provisions unregistered Xiaomi devices onto your WiFi using raw miio protocol.
-Uses raw UDP sockets (not python-miio) to avoid Windows multi-adapter issues.
-
+### WiFi Provisioning (unregistered China-set devices)
 ```bash
-# 1. Factory reset the purifier (hold button ~5s)
-# 2. Connect laptop WiFi to the purifier's hotspot (xiaomi-airp-xxx)
-# 3. Run:
+# 1. Factory reset purifier (hold button ~5s)
+# 2. Connect laptop to purifier's hotspot
 python provision_china.py
 ```
+Uses raw miio UDP protocol (not python-miio) to avoid Windows multi-adapter socket issues. Edit WIFI_SSID, WIFI_PASSWORD, and XIAOMI_UID before running.
 
-Edit `WIFI_SSID` and `WIFI_PASSWORD` in the script before running.
-
-### `discover.py` — Local network discovery
-
-Scans for Xiaomi devices on the local network via mDNS and handshake.
-
+### Network Discovery
 ```bash
 python discover.py
-python discover.py --cloud       # Cloud token extraction (basic, no 2FA)
-python discover.py --help-tokens # Manual extraction methods
+python discover.py --help-tokens
 ```
-
-### `app.py` — Flask dashboard (archived)
-
-Original custom Flask dashboard for purifier control. Superseded by Home Assistant.
-Still functional if you want a standalone web UI without HA.
 
 ## Supported Models (tested)
 
-| Model | miio model string | Protocol | Provisioning |
-|-------|-------------------|----------|-------------|
-| Air Purifier 4 | zhimi.airp.mb5 | MiOT | Cloud token |
-| Air Purifier 4 Lite | zhimi.airp.rmb1 | MiOT | Cloud token |
-| Air Purifier 4 Compact | xiaomi.airp.cpa4 | MiOT | Cloud token |
-| Air Purifier 3C | zhimi.airpurifier.mb4 | MiOT | Cloud token |
-| Air Purifier 4 Pro (CN) | xiaomi.airp.va2b | MiOT | AP mode provisioning |
+| Model | miio string | Notes |
+|-------|------------|-------|
+| Air Purifier 4 | zhimi.airp.mb5 | Full support |
+| Air Purifier 4 Lite | zhimi.airp.rmb1 | Full support |
+| Air Purifier 4 Compact | xiaomi.airp.cpa4 | No temp/humidity sensor |
+| Air Purifier 3C | zhimi.airpurifier.mb4 | No temp/humidity sensor |
+| Air Purifier 4 Pro (CN) | xiaomi.airp.va2b | Provisioned via raw miio, registered to SG account via uid trick |
 
 ## Troubleshooting
 
-**provision_china.py times out** — `python-miio` socket handling fails with multiple network adapters (e.g., NordVPN). The script uses raw sockets to bypass this. If the raw handshake test works but the script doesn't, check for VPN adapters.
+**provision_china.py times out** — python-miio socket handling fails with multiple network adapters (NordVPN etc). Script uses raw sockets to bypass this.
 
-**extract_tokens.py 2FA fails** — Use Playwright browser automation to complete 2FA, extract the passToken cookie, then inject into micloud. See project conversation history.
+**Purifier AP mode IP** — Not always 192.168.8.1. Check `ipconfig` for the gateway when connected to the purifier hotspot. Tested: 192.168.99.1.
 
-**Purifier AP mode IP** — Not always `192.168.8.1`. Check `ipconfig` (Windows) or `ifconfig` (Mac/Linux) for the gateway IP when connected to the purifier hotspot. Tested: `192.168.99.1`.
+**China 4 Pro token rotation** — Provision with `uid` + `country_domain` to register to your cloud account. Tokens become cloud-managed and stable.
