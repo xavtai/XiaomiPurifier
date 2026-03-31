@@ -306,10 +306,15 @@ if __name__ == "__main__":
 
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "5000"))
-    debug = os.environ.get("DEBUG", "0") == "1"
 
     print(f"\n  Air Purifier Control: http://{host}:{port}")
     print(f"  Devices config: {DEVICES_FILE}")
     print(f"  Background polling: every {POLL_INTERVAL}s\n")
 
-    app.run(host=host, port=port, debug=debug)
+    try:
+        from waitress import serve
+        print("  Server: waitress (production)\n")
+        serve(app, host=host, port=port, threads=4)
+    except ImportError:
+        print("  Server: Flask dev (install waitress for production)\n")
+        app.run(host=host, port=port)
