@@ -1,153 +1,67 @@
-# Xiaomi Air Purifier Local Control
+# Xiaomi Air Purifier — Token Extraction & Provisioning Tools
 
-Control and monitor Xiaomi air purifiers directly over your local WiFi — no Xiaomi app or cloud required. Works with China-set, Thailand-set, or any region.
+Tools for extracting device tokens and provisioning Xiaomi air purifiers for local control. Tokens are needed by Home Assistant or any local control system using the miio protocol.
 
-## Quick Start
+**Status:** Pivoted from custom Flask app to Home Assistant on Raspberry Pi 5. The Flask app (`app.py`) is archived — not actively developed. The token extraction and provisioning scripts are the active tools.
+
+## Tools
+
+### `extract_tokens.py` — Cloud token extraction (Thai-set / cloud-registered devices)
+
+Logs into Xiaomi cloud to retrieve tokens for devices registered to your account.
+Handles 2FA via browser redirect.
 
 ```bash
-cd purifier_app
-pip install -r requirements.txt
-python app.py
-# Open http://localhost:5000 on your phone (same WiFi)
+pip install python-miio requests
+python extract_tokens.py
 ```
 
-## Setup
+Note: For accounts with email-based 2FA, the script's retry approach may fail.
+The proven method is passToken injection via Playwright + micloud. See project memory for details.
 
-### Step 1: Find Your Purifiers' IPs
+### `provision_china.py` — WiFi provisioning (China-set / unregistered devices)
 
-Check your router's DHCP/client list for devices with hostnames containing `zhimi` or `xiaomi`. Or:
+Provisions unregistered Xiaomi devices onto your WiFi using raw miio protocol.
+Uses raw UDP sockets (not python-miio) to avoid Windows multi-adapter issues.
 
 ```bash
-# Auto-discover on local network
+# 1. Factory reset the purifier (hold button ~5s)
+# 2. Connect laptop WiFi to the purifier's hotspot (xiaomi-airp-xxx)
+# 3. Run:
+python provision_china.py
+```
+
+Edit `WIFI_SSID` and `WIFI_PASSWORD` in the script before running.
+
+### `discover.py` — Local network discovery
+
+Scans for Xiaomi devices on the local network via mDNS and handshake.
+
+```bash
 python discover.py
+python discover.py --cloud       # Cloud token extraction (basic, no 2FA)
+python discover.py --help-tokens # Manual extraction methods
 ```
 
-### Step 2: Get Device Tokens
+### `app.py` — Flask dashboard (archived)
 
-Each Xiaomi device has a 32-character hex token needed for local communication.
+Original custom Flask dashboard for purifier control. Superseded by Home Assistant.
+Still functional if you want a standalone web UI without HA.
 
-**Method A — Xiaomi Cloud (Easiest)**
-```bash
-python discover.py --cloud
-```
-This logs into your Xiaomi account and retrieves tokens. For China-set devices, use server `cn`.
+## Supported Models (tested)
 
-**Method B — Token Extractor Tool**
-```bash
-pip install xiaomi_token_extractor
-python -m xiaomi_token_extractor
-```
-
-**Method C — All methods explained**
-```bash
-python discover.py --help-tokens
-```
-
-### Step 3: Configure `devices.json`
-
-```json
-{
-  "devices": [
-    {
-      "id": "living_room",
-      "name": "Living Room",
-      "ip": "192.168.1.100",
-      "token": "abcdef1234567890abcdef1234567890"
-    },
-    {
-      "id": "bedroom_master",
-      "name": "Master Bedroom",
-      "ip": "192.168.1.101",
-      "token": "1234567890abcdef1234567890abcdef"
-    }
-  ]
-}
-```
-
-- **id**: Unique identifier (used in API URLs, no spaces)
-- **name**: Display name on dashboard
-- **ip**: Device's local IP address (set a static IP in your router for stability)
-- **token**: 32-char hex token from Step 2
-
-### Step 4: Run
-
-```bash
-python app.py
-```
-
-Open `http://<your-machine-ip>:5000` from any device on the same WiFi.
-
-**Tip:** Bookmark this URL on your phone for quick access.
-
-## Features
-
-- **Live monitoring**: PM2.5 (AQI), temperature, humidity, motor speed
-- **Power control**: Turn purifiers on/off
-- **Mode control**: Auto, Silent, Favorite, Fan
-- **Fan speed**: Adjustable slider (0-14) in Favorite mode
-- **Filter tracking**: Remaining life percentage and hours used
-- **LED/Buzzer toggle**: Control indicator light and beep sounds
-- **Auto-refresh**: Status updates every 15 seconds
-- **Dark/Light theme**: Toggle in top-right corner
-- **Mobile-first**: Designed for phone control
-
-## Supported Models
-
-Works with most Xiaomi / Smartmi air purifiers:
-
-| Protocol | Models |
-|----------|--------|
-| MiOT (newer) | Air Purifier 4, 4 Pro, 4 Lite, Pro H, 3C |
-| Classic miio | Air Purifier 2S, 3H, Pro, 2H, Max |
-
-The app auto-detects which protocol each purifier uses.
-
-## Run as a Service (Optional)
-
-To keep the app running after you close the terminal:
-
-```bash
-# Using systemd (Linux)
-sudo tee /etc/systemd/system/purifier.service << EOF
-[Unit]
-Description=Xiaomi Air Purifier Control
-After=network.target
-
-[Service]
-Type=simple
-User=$USER
-WorkingDirectory=$(pwd)
-ExecStart=$(which python3) app.py
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl enable --now purifier.service
-```
-
-Or simply: `nohup python app.py &`
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HOST` | `0.0.0.0` | Bind address |
-| `PORT` | `5000` | Port number |
-| `DEBUG` | `0` | Set to `1` for Flask debug mode |
+| Model | miio model string | Protocol | Provisioning |
+|-------|-------------------|----------|-------------|
+| Air Purifier 4 | zhimi.airp.mb5 | MiOT | Cloud token |
+| Air Purifier 4 Lite | zhimi.airp.rmb1 | MiOT | Cloud token |
+| Air Purifier 4 Compact | xiaomi.airp.cpa4 | MiOT | Cloud token |
+| Air Purifier 3C | zhimi.airpurifier.mb4 | MiOT | Cloud token |
+| Air Purifier 4 Pro (CN) | xiaomi.airp.va2b | MiOT | AP mode provisioning |
 
 ## Troubleshooting
 
-**"Device offline"** — Check that:
-1. The purifier is powered on and connected to WiFi
-2. Your machine and purifier are on the same network/VLAN
-3. The IP in `devices.json` is correct (IPs can change — set static IPs in router)
-4. The token is correct (re-extract if needed)
-5. UDP port 54321 is not blocked by a firewall
+**provision_china.py times out** — `python-miio` socket handling fails with multiple network adapters (e.g., NordVPN). The script uses raw sockets to bypass this. If the raw handshake test works but the script doesn't, check for VPN adapters.
 
-**"python-miio not installed"** — Run `pip install python-miio`
+**extract_tokens.py 2FA fails** — Use Playwright browser automation to complete 2FA, extract the passToken cookie, then inject into micloud. See project conversation history.
 
-**Token extraction fails** — Try a different method (see `python discover.py --help-tokens`)
-
-**Slow responses** — Normal; each device takes 1-2 seconds to respond. All 7 are polled in parallel.
+**Purifier AP mode IP** — Not always `192.168.8.1`. Check `ipconfig` (Windows) or `ifconfig` (Mac/Linux) for the gateway IP when connected to the purifier hotspot. Tested: `192.168.99.1`.

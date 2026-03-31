@@ -7,3 +7,11 @@ __pycache__/
 dist/
 build/
 .vscode/
+
+# Sensitive data — tokens, credentials, device info
+tokens_extracted.json
+china_provision_result.json
+devices.json
+
+# Playwright browser automation artifacts
+.playwright-mcp/
