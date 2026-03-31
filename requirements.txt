@@ -1,0 +1,2 @@
+flask>=3.0
+python-miio>=0.5.12

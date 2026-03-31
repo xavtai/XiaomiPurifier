@@ -1,0 +1,16 @@
+{
+  "devices": [
+    {
+      "id": "purifier_1",
+      "name": "Living Room",
+      "ip": "192.168.1.100",
+      "token": "ffffffffffffffffffffffffffffffff"
+    },
+    {
+      "id": "purifier_2",
+      "name": "Bedroom 1",
+      "ip": "192.168.1.101",
+      "token": "ffffffffffffffffffffffffffffffff"
+    }
+  ]
+}
