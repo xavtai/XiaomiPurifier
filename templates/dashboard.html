@@ -35,6 +35,12 @@
   --font-ui: 'Outfit', sans-serif;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html {
+  font-size: 16px;
+}
+@media (min-width: 1200px) { html { font-size: 20px; } }
+@media (min-width: 1800px) { html { font-size: 24px; } }
+@media (min-width: 2400px) { html { font-size: 28px; } }
 body {
   font-family: var(--font-ui);
   background: var(--bg);
@@ -567,7 +573,7 @@ function createCard(d) {
   // Stats
   const stats = document.createElement('div');
   stats.className = 'stats-row';
-  [{v: d.temperature != null ? d.temperature + '\u00B0' : '--', l: 'Temp'},
+  [{v: d.temperature != null ? Math.round(d.temperature * 10) / 10 + '\u00B0' : '--', l: 'Temp'},
    {v: d.humidity != null ? d.humidity + '%' : '--', l: 'Hum'},
    {v: d.motor_speed != null ? d.motor_speed : '--', l: 'RPM'}].forEach(s => {
     const item = document.createElement('div');
