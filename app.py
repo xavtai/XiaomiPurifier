@@ -54,6 +54,23 @@ SCREEN_PROP = {
     "xiaomi.airp.va2b":      {"siid": 13, "piid": 1},
 }
 
+# Fan speed property varies by model — some use fan_level, others use favorite_level or target RPM
+FAN_SPEED_CONFIG = {
+    "zhimi.airp.mb5":        {"siid": 2, "piid": 5,  "min": 1,   "max": 3},
+    "xiaomi.airp.va2b":      {"siid": 2, "piid": 5,  "min": 0,   "max": 2},
+    "zhimi.airp.rmb1":       {"siid": 9, "piid": 11, "min": 1,   "max": 14},
+    "xiaomi.airp.cpa4":      {"siid": 9, "piid": 11, "min": 1,   "max": 14},
+    "zhimi.airpurifier.mb4": {"siid": 9, "piid": 3,  "min": 300, "max": 2200},
+}
+
+LEVEL_PRESETS = {
+    "zhimi.airp.mb5":        {"low": 1,   "mid": 2,    "high": 3},
+    "xiaomi.airp.va2b":      {"low": 0,   "mid": 1,    "high": 2},
+    "zhimi.airp.rmb1":       {"low": 3,   "mid": 7,    "high": 14},
+    "xiaomi.airp.cpa4":      {"low": 3,   "mid": 7,    "high": 14},
+    "zhimi.airpurifier.mb4": {"low": 600, "mid": 1200, "high": 2000},
+}
+
 # Physical filter reset instructions per model (for models that don't support remote reset)
 FILTER_RESET_GUIDE = {
     "zhimi.airpurifier.mb4": "3C: Hold RIGHT button 7 sec in standby (3 beeps + green light)",
@@ -89,6 +106,16 @@ _last_outdoor_poll: float = 0
 SCHEDULES_FILE = Path(__file__).parent / "schedules.json"
 _manual_override: dict = {}  # {device_id: timestamp} — suppresses scheduler until next boundary
 _schedule_last_state: dict = {}  # {device_id: "on"/"off"} — prevents repeated commands
+
+
+def _send_and_check(dev, props, action="command"):
+    """Send set_properties and check response codes. Returns (ok, error_msg)."""
+    result = dev.send("set_properties", props)
+    failures = [r for r in result if r.get("code", 0) != 0]
+    if failures:
+        codes = ", ".join(f"code={r['code']}" for r in failures)
+        return False, f"{action} rejected by device ({codes})"
+    return True, None
 
 
 def _load_device_configs_raw() -> dict:
