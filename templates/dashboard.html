@@ -225,6 +225,14 @@ body::before {
 .card.aqi-hazard-card::before { background: var(--aqi-hazard); }
 .card.offline-card { opacity: 0.4; }
 .card.off-card { opacity: 0.65; }
+.card.busy-card { pointer-events: none; }
+.card.busy-card::after {
+  content: ''; position: absolute; inset: 0; z-index: 5;
+  background: rgba(10,15,26,0.4);
+  border-radius: var(--radius);
+  animation: busy-pulse 1s ease-in-out infinite;
+}
+@keyframes busy-pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 0.6; } }
 .card-head {
   display: flex;
   justify-content: space-between;
@@ -735,7 +743,8 @@ function renderSummary() {
 function createCard(d) {
   const isOn = d.online && d.power;
   const ac = aqiCls(d.aqi);
-  const cardCls = !d.online ? 'offline-card' : (!d.power ? 'off-card' : ac + '-card');
+  const isBusy = busyDevices.has(d.id);
+  const cardCls = !d.online ? 'offline-card' : (!d.power ? 'off-card' : ac + '-card') + (isBusy ? ' busy-card' : '');
   const modes = ['Auto', 'Sleep', 'Manual', 'Fan'];
   const curMode = (d.mode || '').toLowerCase();
   const needsFilter = d.filter_life != null && d.filter_life <= 15;
@@ -913,7 +922,7 @@ function createCard(d) {
       if (val == null) return;
       var btn = document.createElement('button');
       var labels = {low: 'Low', mid: 'Mid', high: 'High'};
-      btn.className = 'mode-btn' + (fanSpeed === val ? ' active' : '');
+      btn.className = 'mode-btn' + (Number(fanSpeed) === Number(val) ? ' active' : '');
       btn.textContent = labels[preset];
       btn.disabled = busyDevices.has(d.id);
       btn.onclick = function(e) { e.stopPropagation(); setFan(d.id, preset); };
@@ -996,6 +1005,30 @@ function renderOutdoor() {
     }
     bar.appendChild(comp);
   }
+
+  // Mini sparkline (loaded async, won't block render)
+  fetch(API + '/api/aqi_history?hours=24').then(function(r) { return r.json(); }).then(function(hist) {
+    if (!hist || hist.length < 2) return;
+    var vals = hist.map(function(h) { return h.outdoor || 0; });
+    var max = Math.max.apply(null, vals) || 1;
+    var min = Math.min.apply(null, vals);
+    var w = 120, h = 30;
+    var points = vals.map(function(v, i) {
+      return (i / (vals.length - 1) * w) + ',' + (h - ((v - min) / (max - min + 1)) * h);
+    }).join(' ');
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    svg.setAttribute('width', w);
+    svg.setAttribute('height', h);
+    svg.style.cssText = 'margin-left:12px;opacity:0.7;flex-shrink:0;';
+    var polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    polyline.setAttribute('points', points);
+    polyline.setAttribute('fill', 'none');
+    polyline.setAttribute('stroke', aqiColor(outdoor.aqi));
+    polyline.setAttribute('stroke-width', '1.5');
+    svg.appendChild(polyline);
+    bar.appendChild(svg);
+  }).catch(function() {});
 }
 
 async function fetchStatus() {
@@ -1015,6 +1048,7 @@ async function fetchStatus() {
     document.getElementById('errorBar').style.display = 'none';
     renderSummary();
     renderOutdoor();
+    checkAqiNotification();
     if (!reorderActive) renderDevices();
     document.getElementById('updateTime').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
   } catch (e) {
@@ -1029,6 +1063,29 @@ async function fetchStatus() {
   clearTimeout(refreshTimer);
   refreshTimer = setTimeout(fetchStatus, 15000);
 }
+
+// Outdoor AQI threshold notifications
+var lastNotifiedAqiLevel = 0;
+function checkAqiNotification() {
+  if (!outdoor || outdoor.aqi == null) return;
+  var aqi = outdoor.aqi;
+  var level = aqi > 200 ? 3 : (aqi > 150 ? 2 : (aqi > 100 ? 1 : 0));
+  if (level > 0 && level > lastNotifiedAqiLevel) {
+    var labels = {1: 'Moderate', 2: 'Unhealthy for Sensitive', 3: 'Unhealthy'};
+    var msg = 'Outdoor AQI ' + aqi + ' (' + labels[level] + ') — ' + (outdoor.station || '');
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('Air Quality Alert', {body: msg, icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🌫</text></svg>'});
+    } else {
+      showToast(msg, 'error');
+    }
+  }
+  lastNotifiedAqiLevel = level;
+}
+// Request notification permission on first interaction
+document.addEventListener('click', function reqPerm() {
+  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+  document.removeEventListener('click', reqPerm);
+}, {once: true});
 
 let pendingRefresh = null;
 function showToast(msg, type) {
@@ -1110,13 +1167,19 @@ function resetFilter(id) {
   post('/api/device/' + id + '/filter_reset', {}, name + ' filter reset');
 }
 function allOn() {
-  if (!confirm('Turn on all purifiers?')) return;
+  var off = devices.filter(function(d) { return d.online && !d.power; });
+  var msg = off.length === 0 ? 'All purifiers are already on.' : 'Turn on ' + off.length + ' purifier' + (off.length > 1 ? 's' : '') + '?';
+  if (off.length === 0) { showToast('All already on', 'success'); return; }
+  if (!confirm(msg)) return;
   devices.forEach(function(d) { busyDevices.add(d.id); });
   renderDevices();
   post('/api/all_on', {}, 'All purifiers on');
 }
 function allOff() {
-  if (!confirm('Turn off all purifiers?')) return;
+  var on = devices.filter(function(d) { return d.online && d.power; });
+  var msg = on.length === 0 ? 'All purifiers are already off.' : 'Turn off ' + on.length + ' purifier' + (on.length > 1 ? 's' : '') + '?';
+  if (on.length === 0) { showToast('All already off', 'success'); return; }
+  if (!confirm(msg)) return;
   devices.forEach(function(d) { busyDevices.add(d.id); });
   renderDevices();
   post('/api/all_off', {}, 'All purifiers off');

@@ -87,6 +87,7 @@ FILTER_RESET_GUIDE = {
 DEVICES_FILE = Path(__file__).parent / "devices.json"
 _device_cache: dict = {}
 _device_lock = threading.Lock()
+_thread_pool = ThreadPoolExecutor(max_workers=10)
 _state_lock = threading.Lock()  # protects _cached_status, _manual_override, _schedule_last_state
 
 # Background poll state
@@ -323,6 +324,42 @@ def _poll_outdoor_aqi():
 
     _last_outdoor_poll = time.time()
 
+    # Log AQI history (append one entry per outdoor poll)
+    if _outdoor_aqi and _outdoor_aqi.get("aqi") is not None:
+        _log_aqi_history()
+
+
+AQI_HISTORY_FILE = Path(__file__).parent / "aqi_history.json"
+AQI_HISTORY_MAX = 672  # 7 days × 96 entries/day (15 min intervals)
+
+def _log_aqi_history():
+    """Append current AQI readings to history file. Keeps last 7 days."""
+    from datetime import datetime
+    entry = {
+        "ts": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "outdoor": _outdoor_aqi.get("aqi") if _outdoor_aqi else None,
+        "indoor_avg": None,
+    }
+    # Calculate indoor average from cached devices
+    aqis = [d.get("aqi") for d in _cached_status if d.get("aqi") is not None]
+    if aqis:
+        entry["indoor_avg"] = round(sum(aqis) / len(aqis))
+
+    try:
+        history = json.loads(AQI_HISTORY_FILE.read_text()) if AQI_HISTORY_FILE.exists() else []
+    except (json.JSONDecodeError, OSError):
+        history = []
+
+    history.append(entry)
+    # Trim to max entries
+    if len(history) > AQI_HISTORY_MAX:
+        history = history[-AQI_HISTORY_MAX:]
+
+    try:
+        AQI_HISTORY_FILE.write_text(json.dumps(history))
+    except OSError:
+        pass
+
 
 def _poll_all_devices():
     """Poll all devices and update the cached status."""
@@ -332,10 +369,9 @@ def _poll_all_devices():
         return
 
     results = []
-    with ThreadPoolExecutor(max_workers=min(len(devices), 10)) as pool:
-        futures = {pool.submit(_poll_device, d): d for d in devices}
-        for fut in as_completed(futures):
-            results.append(fut.result())
+    futures = {_thread_pool.submit(_poll_device, d): d for d in devices}
+    for fut in as_completed(futures):
+        results.append(fut.result())
 
     # Spike detection: compare new AQI with previous
     for r in results:
@@ -383,6 +419,20 @@ def _background_poller():
 def index():
     devices = _load_device_configs()
     return render_template("dashboard.html", device_count=len(devices))
+
+
+@app.route("/api/aqi_history")
+def api_aqi_history():
+    """Return AQI history for charts. Optional ?hours=24 to limit."""
+    try:
+        history = json.loads(AQI_HISTORY_FILE.read_text()) if AQI_HISTORY_FILE.exists() else []
+    except (json.JSONDecodeError, OSError):
+        history = []
+    hours = request.args.get("hours", type=int)
+    if hours:
+        max_entries = hours * 4  # 4 entries per hour (15 min intervals)
+        history = history[-max_entries:]
+    return jsonify(history)
 
 
 @app.route("/api/status")
@@ -540,18 +590,13 @@ def api_filter_reset(device_id):
                 hint = FILTER_RESET_GUIDE.get(model, "Hold reset button 6+ sec in standby")
                 return jsonify({"error": hint, "manual_reset": True}), 422
 
-        # Re-poll device to get fresh values
-        fresh = _poll_device(dev_cfg)
-        with _state_lock:
-            for i, s in enumerate(_cached_status):
-                if s["id"] == device_id:
-                    _cached_status[i] = fresh
-                    break
+        # Optimistically update cache — next 10s poll will get actual values
+        _update_cache(device_id, filter_life=100, filter_hours_used=0)
 
         return jsonify({
             "ok": True,
-            "filter_life": fresh.get("filter_life"),
-            "filter_hours_used": fresh.get("filter_hours_used"),
+            "filter_life": 100,
+            "filter_hours_used": 0,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -777,16 +822,16 @@ def _set_power_one(dev_cfg: dict, power: bool) -> dict:
 @app.route("/api/all_on", methods=["POST"])
 def api_all_on():
     devices = _load_device_configs()
-    with ThreadPoolExecutor(max_workers=min(len(devices), 10)) as pool:
-        results = list(pool.map(lambda d: _set_power_one(d, True), devices))
+    futures = [_thread_pool.submit(_set_power_one, d, True) for d in devices]
+    results = [f.result() for f in futures]
     return jsonify(results)
 
 
 @app.route("/api/all_off", methods=["POST"])
 def api_all_off():
     devices = _load_device_configs()
-    with ThreadPoolExecutor(max_workers=min(len(devices), 10)) as pool:
-        results = list(pool.map(lambda d: _set_power_one(d, False), devices))
+    futures = [_thread_pool.submit(_set_power_one, d, False) for d in devices]
+    results = [f.result() for f in futures]
     return jsonify(results)
 
 

@@ -13,9 +13,10 @@ tokens_extracted.json
 china_provision_result.json
 devices.json
 
-# Runtime logs
+# Runtime logs and data
 flask.log
 ssh_tunnel.log
+aqi_history.json
 
 # Plan docs (may contain inline commands with secrets)
 docs/plans/
