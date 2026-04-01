@@ -469,10 +469,11 @@ def api_fan_level(device_id):
             level = int(level_raw)
             level = max(fan_cfg["min"], min(fan_cfg["max"], level))
 
-        # Switch to favorite mode first, then set speed
+        # Switch to favorite mode first, then set speed (with delay for device transition)
         ok, err = _send_and_check(dev, [{"did": "mode", "siid": 2, "piid": 4, "value": 2}], "Mode switch")
         if not ok:
             return jsonify({"error": err}), 422
+        time.sleep(0.3)  # Device needs time to transition modes before accepting speed
 
         ok, err = _send_and_check(dev, [{"did": "fan_speed", "siid": fan_cfg["siid"], "piid": fan_cfg["piid"], "value": level}], "Fan speed")
         if not ok:

@@ -1000,7 +1000,9 @@ function showToast(msg, type) {
 async function post(url, body, successMsg) {
   var match = url.match(/\/device\/([^/]+)/);
   var devId = match ? match[1] : null;
-  if (devId) { busyDevices.add(devId); renderDevices(); }
+  if (devId) busyDevices.add(devId);
+  // Note: no renderDevices() here — the caller (setFan/setMode/togglePower)
+  // already did an optimistic render with busyDevices set
   try {
     const res = await fetch(API + url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {}) });
     const data = await res.json();
@@ -1017,35 +1019,41 @@ async function post(url, body, successMsg) {
     } else {
       showToast(successMsg || 'Done', 'success');
     }
+    if (devId) busyDevices.delete(devId);
     clearTimeout(pendingRefresh);
     pendingRefresh = setTimeout(function() {
       fetchStatus().then(function() {
         if (settingsDeviceId) openSettings(settingsDeviceId);
       });
-    }, 800);
+    }, 2000);  // Wait 2s so background poller has fresh data
   } catch (e) {
     showToast('Connection failed', 'error');
-  } finally {
-    if (devId) { busyDevices.delete(devId); renderDevices(); }
+    if (devId) busyDevices.delete(devId);
   }
 }
 
 function togglePower(id, isOn) {
+  busyDevices.add(id);
   var d = devices.find(function(x) { return x.id === id; });
-  if (d) { d.power = !isOn; renderDevices(); }
+  if (d) { d.power = !isOn; }
+  renderDevices();
   post('/api/device/' + id + '/power', {power: !isOn}, isOn ? 'Turned off' : 'Turned on');
 }
 var MODE_DISPLAY = {auto:'Auto', silent:'Silent', favorite:'Favorite', fan:'Fan'};
 function setMode(id, mode) {
+  busyDevices.add(id);
   var d = devices.find(function(x) { return x.id === id; });
-  if (d) { d.mode = MODE_DISPLAY[mode] || mode; renderDevices(); }
+  if (d) { d.mode = MODE_DISPLAY[mode] || mode; }
+  renderDevices();
   var names = {auto:'Auto', silent:'Sleep', favorite:'Manual', fan:'Fan'};
   post('/api/device/' + id + '/mode', {mode: mode}, 'Mode: ' + (names[mode] || mode));
 }
 function setFan(id, preset) {
+  busyDevices.add(id);
   var d = devices.find(function(x) { return x.id === id; });
   var presets = levelPresets[d ? d.model : ''] || {};
-  if (d && presets[preset] != null) { d.mode = 'Favorite'; d.fan_speed = presets[preset]; renderDevices(); }
+  if (d && presets[preset] != null) { d.mode = 'Favorite'; d.fan_speed = presets[preset]; }
+  renderDevices();
   var labels = {low: 'Low', mid: 'Mid', high: 'High'};
   post('/api/device/' + id + '/fan_level', {level: preset}, 'Speed: ' + (labels[preset] || preset));
 }
