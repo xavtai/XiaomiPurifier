@@ -594,8 +594,10 @@ def _load_schedules() -> dict:
 
 
 def _save_schedules(schedules: dict):
-    with open(SCHEDULES_FILE, "w") as f:
+    tmp = SCHEDULES_FILE.with_suffix(".json.tmp")
+    with open(tmp, "w") as f:
         json.dump(schedules, f, indent=2)
+    os.replace(tmp, SCHEDULES_FILE)
 
 
 def _is_in_active_window(on_time: str, off_time: str) -> bool:
@@ -646,6 +648,11 @@ def _check_schedules():
             if prev_state is not None and prev_state != target_state:
                 _manual_override.pop(dev_id, None)
 
+            # Expire manual override after 60 minutes
+            override_time = _manual_override.get(dev_id)
+            if override_time and (time.time() - override_time > 3600):
+                _manual_override.pop(dev_id, None)
+
             # Skip if manual override is active
             if dev_id in _manual_override:
                 _schedule_last_state[dev_id] = target_state
@@ -693,7 +700,12 @@ def api_schedule(device_id):
         _schedule_last_state.pop(device_id, None)
         _manual_override.pop(device_id, None)
     elif "schedules" in data:
-        # Array of {on, off} pairs
+        # Validate time format
+        import re
+        time_re = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+        for s in data["schedules"]:
+            if not time_re.match(s.get("on", "")) or not time_re.match(s.get("off", "")):
+                return jsonify({"error": f"Invalid time format: {s}. Use HH:MM (00:00-23:59)"}), 400
         schedules[device_id] = data["schedules"]
     elif data.get("on") and data.get("off"):
         # Legacy single schedule support
