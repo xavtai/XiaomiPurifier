@@ -1173,6 +1173,8 @@ function addScheduleRow(container, id, onVal, offVal) {
   offInput.type = 'time';
   offInput.className = 'sched-off';
   offInput.value = offVal;
+  onInput.pattern = '[0-2][0-9]:[0-5][0-9]';
+  offInput.pattern = '[0-2][0-9]:[0-5][0-9]';
   var removeBtn = document.createElement('button');
   removeBtn.className = 'brightness-btn';
   removeBtn.textContent = '\u00D7';
@@ -1212,6 +1214,13 @@ function saveSchedules(id) {
     if (on && off) pairs.push({on: on, off: off});
   });
   if (pairs.length === 0) { showToast('Add at least one schedule', 'error'); return; }
+  var timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
+  for (var i = 0; i < pairs.length; i++) {
+    if (!timeRe.test(pairs[i].on) || !timeRe.test(pairs[i].off)) {
+      showToast('Invalid time format \u2014 use HH:MM', 'error');
+      return;
+    }
+  }
   var label = pairs.map(function(p) { return p.on + '\u2013' + p.off; }).join(', ');
   post('/api/device/' + id + '/schedule', {schedules: pairs}, 'Schedule: ' + label);
   closeSettings();
