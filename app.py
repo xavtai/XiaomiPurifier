@@ -200,6 +200,16 @@ def _poll_device(dev_cfg: dict) -> dict:
         result["buzzer"] = vals.get("buzzer")
         result["child_lock"] = vals.get("child_lock")
 
+        # Fan speed (model-specific siid/piid)
+        fan_cfg = FAN_SPEED_CONFIG.get(model)
+        if fan_cfg:
+            try:
+                fp = dev.send("get_properties", [{"did": "fan_speed", "siid": fan_cfg["siid"], "piid": fan_cfg["piid"]}])
+                if fp and fp[0].get("code", -1) == 0:
+                    result["fan_speed"] = fp[0].get("value")
+            except Exception:
+                pass
+
         # Screen brightness (model-specific siid/piid)
         model = dev_cfg.get("model", "")
         sp = SCREEN_PROP.get(model)
@@ -364,7 +374,13 @@ def api_status():
     if not _poll_ready.is_set():
         # First request before background poll completes — wait for it
         _poll_ready.wait(timeout=15)
-    return jsonify({"devices": _cached_status, "outdoor": _outdoor_aqi, "schedules": _load_schedules()})
+    return jsonify({
+        "devices": _cached_status,
+        "outdoor": _outdoor_aqi,
+        "schedules": _load_schedules(),
+        "fan_config": FAN_SPEED_CONFIG,
+        "level_presets": LEVEL_PRESETS,
+    })
 
 
 def _get_device_for_command(device_id: str):
