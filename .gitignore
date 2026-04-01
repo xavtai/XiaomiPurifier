@@ -17,6 +17,9 @@ devices.json
 flask.log
 ssh_tunnel.log
 
+# Plan docs (may contain inline commands with secrets)
+docs/plans/
+
 # Playwright browser automation artifacts
 .playwright-mcp/
 

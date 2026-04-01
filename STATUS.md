@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-04-01
+**Last updated:** 2026-04-02
 **State:** ACTIVE — Flask dashboard running, remote access live
 
 ## Completed
@@ -13,10 +13,15 @@
 - Basic auth on remote endpoint (admin/****)
 - Deco: purifiers un-isolated, DHCP reservations set for all 7
 - New dashboard UI: mobile-first, AQI color coding, filter warnings, All On/Off
+- Drag-to-reorder room cards (desktop + mobile touch), persisted in localStorage
+- .env fallback in app.py (outdoor AQI never silently breaks on restart)
+- restart.sh for bash-based Flask + SSH tunnel restart with health checks
+- SessionStart hook auto-checks Flask + tunnel health every conversation
+- 21-bug adversarial audit fix (thread safety, toast visibility, touch drag, API key log leak, SSH reconnect, etc.)
 
 ## How to Run
 
-Double-click `start.bat` — starts Flask app + SSH tunnel with auto-reconnect.
+Double-click `start.bat` — or from bash: `bash restart.sh`
 - Local: http://localhost:5000
 - Remote: https://app.xavbuilds.com/purifier/
 
