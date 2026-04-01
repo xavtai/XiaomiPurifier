@@ -389,17 +389,21 @@ def api_power(device_id):
         return jsonify({"error": "Device offline or not found"}), 503
 
     try:
-        action = request.json.get("action", "toggle") if request.json else "toggle"
-        if action == "on":
+        data = request.json or {}
+        if "power" in data:
+            power = bool(data["power"])
+        elif data.get("action") == "on":
             power = True
-        elif action == "off":
+        elif data.get("action") == "off":
             power = False
         else:
             props = dev.send("get_properties", [{"did": "power", "siid": 2, "piid": 1}])
             current = props[0].get("value", False) if props else False
             power = not current
 
-        dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": power}])
+        ok, err = _send_and_check(dev, [{"did": "power", "siid": 2, "piid": 1, "value": power}], "Power")
+        if not ok:
+            return jsonify({"error": err}), 422
         with _state_lock:
             _manual_override[device_id] = time.time()
         return jsonify({"ok": True, "power": power})
@@ -419,7 +423,9 @@ def api_mode(device_id):
         return jsonify({"error": f"Unknown mode: {mode_str}. Use: auto, silent, favorite, fan"}), 400
 
     try:
-        dev.send("set_properties", [{"did": "mode", "siid": 2, "piid": 4, "value": mode_val}])
+        ok, err = _send_and_check(dev, [{"did": "mode", "siid": 2, "piid": 4, "value": mode_val}], "Mode")
+        if not ok:
+            return jsonify({"error": err}), 422
         return jsonify({"ok": True, "mode": mode_str})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -432,9 +438,29 @@ def api_fan_level(device_id):
         return jsonify({"error": "Device offline or not found"}), 503
 
     try:
-        level = int(request.json.get("level", 5)) if request.json else 5
-        level = max(0, min(14, level))
-        dev.send("set_properties", [{"did": "fan_level", "siid": 2, "piid": 5, "value": level}])
+        data = request.json or {}
+        level_raw = data.get("level", "mid")
+        model = dev_cfg.get("model", "")
+        presets = LEVEL_PRESETS.get(model, {})
+        fan_cfg = FAN_SPEED_CONFIG.get(model)
+        if not fan_cfg:
+            return jsonify({"error": f"Unknown fan config for model {model}"}), 400
+
+        # Accept preset names ("low"/"mid"/"high") or numeric values
+        if isinstance(level_raw, str) and level_raw in presets:
+            level = presets[level_raw]
+        else:
+            level = int(level_raw)
+            level = max(fan_cfg["min"], min(fan_cfg["max"], level))
+
+        # Switch to favorite mode first, then set speed
+        ok, err = _send_and_check(dev, [{"did": "mode", "siid": 2, "piid": 4, "value": 2}], "Mode switch")
+        if not ok:
+            return jsonify({"error": err}), 422
+
+        ok, err = _send_and_check(dev, [{"did": "fan_speed", "siid": fan_cfg["siid"], "piid": fan_cfg["piid"], "value": level}], "Fan speed")
+        if not ok:
+            return jsonify({"error": err}), 422
         return jsonify({"ok": True, "fan_level": level})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -492,7 +518,9 @@ def api_buzzer(device_id):
         return jsonify({"error": "Device offline or not found"}), 503
     try:
         enabled = bool(request.json.get("enabled", True)) if request.json else True
-        dev.send("set_properties", [{"did": "buzzer", "siid": 6, "piid": 1, "value": enabled}])
+        ok, err = _send_and_check(dev, [{"did": "buzzer", "siid": 6, "piid": 1, "value": enabled}], "Buzzer")
+        if not ok:
+            return jsonify({"error": err}), 422
         return jsonify({"ok": True, "buzzer": enabled})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -505,7 +533,9 @@ def api_child_lock(device_id):
         return jsonify({"error": "Device offline or not found"}), 503
     try:
         enabled = bool(request.json.get("enabled", True)) if request.json else True
-        dev.send("set_properties", [{"did": "child_lock", "siid": 8, "piid": 1, "value": enabled}])
+        ok, err = _send_and_check(dev, [{"did": "child_lock", "siid": 8, "piid": 1, "value": enabled}], "Child lock")
+        if not ok:
+            return jsonify({"error": err}), 422
         return jsonify({"ok": True, "child_lock": enabled})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -527,7 +557,9 @@ def api_brightness(device_id):
         # mb4 also has a separate on/off bool for screen
         if model == "zhimi.airpurifier.mb4":
             cmds.append({"did": "screen_on", "siid": 7, "piid": 1, "value": level > 0})
-        dev.send("set_properties", cmds)
+        ok, err = _send_and_check(dev, cmds, "Brightness")
+        if not ok:
+            return jsonify({"error": err}), 422
         return jsonify({"ok": True, "brightness": level})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -618,8 +650,11 @@ def _check_schedules():
         try:
             _, dev = _get_device_for_command(dev_id)
             if dev:
-                dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": should_be_on}])
-                log.info("Schedule: %s turned %s", dev_id, target_state)
+                ok, err = _send_and_check(dev, [{"did": "power", "siid": 2, "piid": 1, "value": should_be_on}], "Schedule power")
+                if ok:
+                    log.info("Schedule: %s turned %s", dev_id, target_state)
+                else:
+                    log.warning("Schedule command rejected for %s: %s", dev_id, err)
                 with _state_lock:
                     _schedule_last_state[dev_id] = target_state
         except Exception as e:
@@ -661,7 +696,9 @@ def _set_power_one(dev_cfg: dict, power: bool) -> dict:
     try:
         _, dev = _get_device_for_command(dev_cfg["id"])
         if dev:
-            dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": power}])
+            ok, err = _send_and_check(dev, [{"did": "power", "siid": 2, "piid": 1, "value": power}], "Power")
+            if not ok:
+                return {"id": dev_cfg["id"], "error": err}
             with _state_lock:
                 _manual_override[dev_cfg["id"]] = time.time()
             return {"id": dev_cfg["id"], "ok": True}
