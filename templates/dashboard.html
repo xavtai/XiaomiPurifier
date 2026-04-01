@@ -625,6 +625,7 @@ let outdoor = null;
 let schedules = {};
 let fanConfig = {};
 let levelPresets = {};
+let busyDevices = new Set();
 let refreshTimer = null;
 
 function aqiColor(aqi) {
@@ -754,7 +755,7 @@ function createCard(d) {
   gear.onclick = function(e) { e.stopPropagation(); openSettings(d.id); };
   const toggle = document.createElement('button');
   toggle.className = 'power-toggle ' + (isOn ? 'on' : 'off');
-  toggle.disabled = !d.online;
+  toggle.disabled = !d.online || busyDevices.has(d.id);
   toggle.onclick = function(e) { e.stopPropagation(); togglePower(d.id, isOn); };
   rightWrap.appendChild(gear);
   rightWrap.appendChild(toggle);
@@ -871,18 +872,20 @@ function createCard(d) {
     {label: 'Sleep', value: 'silent'},
     {label: 'Manual', value: 'favorite'},
   ];
+  var isManual = (curMode === 'favorite' || curMode === 'fan');
   modeMap.forEach(function(m) {
     const btn = document.createElement('button');
-    btn.className = 'mode-btn' + (curMode === m.value ? ' active' : '');
+    var active = m.value === 'favorite' ? isManual : curMode === m.value;
+    btn.className = 'mode-btn' + (active ? ' active' : '');
     btn.textContent = m.label;
-    btn.disabled = !isOn;
+    btn.disabled = !isOn || busyDevices.has(d.id);
     btn.onclick = function(e) { e.stopPropagation(); setMode(d.id, m.value); };
     modeRow.appendChild(btn);
   });
   card.appendChild(modeRow);
 
   // Level preset buttons — shown inline when in Manual (favorite) mode
-  if (isOn && curMode === 'favorite') {
+  if (isOn && (curMode === 'favorite' || curMode === 'fan')) {
     var presets = levelPresets[d.model] || {};
     var fanSpeed = d.fan_speed;
     var presetRow = document.createElement('div');
@@ -895,6 +898,7 @@ function createCard(d) {
       var labels = {low: 'Low', mid: 'Mid', high: 'High'};
       btn.className = 'mode-btn' + (fanSpeed === val ? ' active' : '');
       btn.textContent = labels[preset];
+      btn.disabled = busyDevices.has(d.id);
       btn.onclick = function(e) { e.stopPropagation(); setFan(d.id, preset); };
       presetRow.appendChild(btn);
     });
@@ -994,13 +998,15 @@ function showToast(msg, type) {
   setTimeout(() => { t.className = 'toast'; }, dur);
 }
 async function post(url, body, successMsg) {
+  var match = url.match(/\/device\/([^/]+)/);
+  var devId = match ? match[1] : null;
+  if (devId) { busyDevices.add(devId); renderDevices(); }
   try {
     const res = await fetch(API + url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {}) });
     const data = await res.json();
     if (!res.ok) {
       showToast('Error: ' + (data.error || 'Unknown'), 'error');
     } else if (Array.isArray(data)) {
-      // Bulk action — report partial failures
       var ok = data.filter(function(r) { return r.ok; }).length;
       var total = data.length;
       if (ok === total) {
@@ -1016,18 +1022,30 @@ async function post(url, body, successMsg) {
       fetchStatus().then(function() {
         if (settingsDeviceId) openSettings(settingsDeviceId);
       });
-    }, 2000);
+    }, 800);
   } catch (e) {
     showToast('Connection failed', 'error');
+  } finally {
+    if (devId) { busyDevices.delete(devId); renderDevices(); }
   }
 }
 
-function togglePower(id, isOn) { post('/api/device/' + id + '/power', {power: !isOn}, isOn ? 'Turned off' : 'Turned on'); }
+function togglePower(id, isOn) {
+  var d = devices.find(function(x) { return x.id === id; });
+  if (d) { d.power = !isOn; renderDevices(); }
+  post('/api/device/' + id + '/power', {power: !isOn}, isOn ? 'Turned off' : 'Turned on');
+}
+var MODE_DISPLAY = {auto:'Auto', silent:'Silent', favorite:'Favorite', fan:'Fan'};
 function setMode(id, mode) {
+  var d = devices.find(function(x) { return x.id === id; });
+  if (d) { d.mode = MODE_DISPLAY[mode] || mode; renderDevices(); }
   var names = {auto:'Auto', silent:'Sleep', favorite:'Manual', fan:'Fan'};
   post('/api/device/' + id + '/mode', {mode: mode}, 'Mode: ' + (names[mode] || mode));
 }
 function setFan(id, preset) {
+  var d = devices.find(function(x) { return x.id === id; });
+  var presets = levelPresets[d ? d.model : ''] || {};
+  if (d && presets[preset] != null) { d.mode = 'Favorite'; d.fan_speed = presets[preset]; renderDevices(); }
   var labels = {low: 'Low', mid: 'Mid', high: 'High'};
   post('/api/device/' + id + '/fan_level', {level: preset}, 'Speed: ' + (labels[preset] || preset));
 }
