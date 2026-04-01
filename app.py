@@ -201,6 +201,7 @@ def _poll_device(dev_cfg: dict) -> dict:
         result["child_lock"] = vals.get("child_lock")
 
         # Fan speed — reuse main batch value when same property, else poll separately
+        model = dev_cfg.get("model", "")
         fan_cfg = FAN_SPEED_CONFIG.get(model)
         if fan_cfg:
             if fan_cfg["siid"] == 2 and fan_cfg["piid"] == 5:
@@ -216,7 +217,6 @@ def _poll_device(dev_cfg: dict) -> dict:
                     pass
 
         # Screen brightness (model-specific siid/piid)
-        model = dev_cfg.get("model", "")
         sp = SCREEN_PROP.get(model)
         if sp:
             try:
@@ -448,7 +448,8 @@ def api_mode(device_id):
     if dev is None:
         return jsonify({"error": "Device offline or not found"}), 503
 
-    mode_str = request.json.get("mode", "auto") if request.json else "auto"
+    data = request.get_json(silent=True) or {}
+    mode_str = data.get("mode", "auto")
     mode_val = MODE_VALUES.get(mode_str.lower())
     if mode_val is None:
         return jsonify({"error": f"Unknown mode: {mode_str}. Use: auto, silent, favorite, fan"}), 400

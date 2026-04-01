@@ -5,7 +5,7 @@ Local control dashboard for 7 Xiaomi air purifiers in Chiang Mai. Flask app with
 
 ## Active System
 - `app.py` — **Live production dashboard.** Waitress server, background polling, generic MiOT protocol for all models. Includes: outdoor AQI polling, spike detection, device settings (buzzer/child lock/brightness), daily scheduling with manual override.
-- `templates/dashboard.html` — Mobile-first responsive dashboard with 6-tier AQI color coding, outdoor AQI bar, settings modal (gear icon), inline fan slider on Manual mode, schedule labels, filter reset with model-specific guides.
+- `templates/dashboard.html` — Mobile-first responsive dashboard with 6-tier AQI color coding, outdoor AQI bar, settings modal (gear icon), Low/Mid/High fan presets on Manual mode, schedule labels, filter reset with model-specific guides.
 - `devices.json` — Device configs with tokens (gitignored, contains secrets). Also holds `outdoor.lat/lon` for AQI station coordinates.
 - `schedules.json` — Per-device on/off schedules (created on first save).
 - `.env` — API keys for IQAir and WAQI (gitignored). Read by `start.bat` at launch.
