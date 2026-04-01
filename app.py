@@ -9,6 +9,7 @@ import os
 import logging
 import threading
 import time
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -44,6 +45,24 @@ MODE_NAMES = {0: "Auto", 1: "Silent", 2: "Favorite", 3: "Fan"}
 MODE_VALUES = {"auto": 0, "silent": 1, "favorite": 2, "fan": 3}
 POLL_INTERVAL = 10  # seconds
 
+# Screen brightness siid/piid varies by model
+SCREEN_PROP = {
+    "zhimi.airpurifier.mb4": {"siid": 7, "piid": 2},
+    "zhimi.airp.mb5":        {"siid": 13, "piid": 2},
+    "zhimi.airp.rmb1":       {"siid": 13, "piid": 2},
+    "xiaomi.airp.cpa4":      {"siid": 13, "piid": 2},
+    "xiaomi.airp.va2b":      {"siid": 13, "piid": 1},
+}
+
+# Physical filter reset instructions per model (for models that don't support remote reset)
+FILTER_RESET_GUIDE = {
+    "zhimi.airpurifier.mb4": "3C: Hold RIGHT button 7 sec in standby (3 beeps + green light)",
+    "xiaomi.airp.cpa4":      "4 Compact: Hold POWER button 6 sec in standby (sound + green light)",
+    "xiaomi.airp.va2b":      "4 Pro: Insert paperclip in reset pin-hole (near power cord) 5 sec (light turns blue/green)",
+    "zhimi.airp.mb5":        "4: Hold POWER + DISPLAY buttons together 7 sec (2 beeps + green blink)",
+    "zhimi.airp.rmb1":       "4 Lite: Hold RESET button on back panel 6 sec (short sound)",
+}
+
 # ---------------------------------------------------------------------------
 # Device management
 # ---------------------------------------------------------------------------
@@ -55,15 +74,32 @@ _device_lock = threading.Lock()
 # Background poll state
 _cached_status: list = []
 _last_poll_time: float = 0
+_previous_aqi: dict = {}  # {device_id: last_pm25} for spike detection
+
+# Outdoor AQI state
+IQAIR_KEY = os.environ.get("IQAIR_KEY", "")
+WAQI_TOKEN = os.environ.get("WAQI_TOKEN", "")
+OUTDOOR_POLL_INTERVAL = 900  # 15 minutes
+_outdoor_aqi: dict | None = None
+_last_outdoor_poll: float = 0
+
+# Scheduling state
+SCHEDULES_FILE = Path(__file__).parent / "schedules.json"
+_manual_override: dict = {}  # {device_id: timestamp} — suppresses scheduler until next boundary
+_schedule_last_state: dict = {}  # {device_id: "on"/"off"} — prevents repeated commands
+
+
+def _load_device_configs_raw() -> dict:
+    try:
+        with open(DEVICES_FILE) as f:
+            return json.load(f)
+    except Exception as e:
+        log.error("Failed to load devices.json: %s", e)
+        return {}
 
 
 def _load_device_configs() -> list[dict]:
-    try:
-        with open(DEVICES_FILE) as f:
-            return json.load(f)["devices"]
-    except Exception as e:
-        log.error("Failed to load devices.json: %s", e)
-        return []
+    return _load_device_configs_raw().get("devices", [])
 
 
 def _get_device(dev_cfg: dict) -> Device | None:
@@ -114,7 +150,12 @@ def _poll_device(dev_cfg: dict) -> dict:
         if dev is None:
             return result
 
-        props = dev.send("get_properties", MIOT_PROPS)
+        # Main properties batch (consistent across all models)
+        extra_props = [
+            {"did": "buzzer",     "siid": 6, "piid": 1},
+            {"did": "child_lock", "siid": 8, "piid": 1},
+        ]
+        props = dev.send("get_properties", MIOT_PROPS + extra_props)
         vals = {p["did"]: p.get("value") for p in props if p.get("code", -1) == 0}
 
         result["online"] = True
@@ -127,6 +168,19 @@ def _poll_device(dev_cfg: dict) -> dict:
         result["motor_speed"] = vals.get("motor_speed")
         result["filter_life"] = vals.get("filter_life")
         result["filter_hours_used"] = vals.get("filter_hours")
+        result["buzzer"] = vals.get("buzzer")
+        result["child_lock"] = vals.get("child_lock")
+
+        # Screen brightness (model-specific siid/piid)
+        model = dev_cfg.get("model", "")
+        sp = SCREEN_PROP.get(model)
+        if sp:
+            try:
+                bp = dev.send("get_properties", [{"did": "brightness", **sp}])
+                if bp and bp[0].get("code", -1) == 0:
+                    result["brightness"] = bp[0].get("value")
+            except Exception:
+                pass
     except Exception as e:
         log.warning("Error polling %s: %s", dev_cfg["id"], e)
         with _device_lock:
@@ -134,9 +188,90 @@ def _poll_device(dev_cfg: dict) -> dict:
     return result
 
 
+def _poll_outdoor_iqair(lat: float, lon: float) -> bool:
+    """Try IQAir API. Returns True on success."""
+    global _outdoor_aqi
+    if not IQAIR_KEY:
+        return False
+    try:
+        url = f"http://api.airvisual.com/v2/nearest_city?lat={lat}&lon={lon}&key={IQAIR_KEY}"
+        req = urllib.request.Request(url, headers={"User-Agent": "XiaomiPurifier/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        if data.get("status") == "success":
+            d = data["data"]
+            pol = d.get("current", {}).get("pollution", {})
+            wthr = d.get("current", {}).get("weather", {})
+            _outdoor_aqi = {
+                "aqi": pol.get("aqius"),
+                "pm25": pol.get("aqius"),  # IQAir free tier doesn't give raw µg/m³
+                "temperature": wthr.get("tp"),
+                "humidity": wthr.get("hu"),
+                "wind": wthr.get("ws"),
+                "station": f"{d.get('city', '')}, {d.get('state', '')}",
+                "updated": pol.get("ts", ""),
+            }
+            log.info("Outdoor AQI (IQAir): %s (station: %s)", _outdoor_aqi["aqi"], _outdoor_aqi["station"])
+            return True
+    except Exception as e:
+        log.warning("IQAir fetch failed: %s", e)
+    return False
+
+
+def _poll_outdoor_waqi(lat: float, lon: float) -> bool:
+    """Try WAQI API. Returns True on success."""
+    global _outdoor_aqi
+    if not WAQI_TOKEN:
+        return False
+    try:
+        url = f"http://api.waqi.info/feed/geo:{lat};{lon}/?token={WAQI_TOKEN}"
+        req = urllib.request.Request(url, headers={"User-Agent": "XiaomiPurifier/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        if data.get("status") == "ok":
+            d = data["data"]
+            iaqi = d.get("iaqi", {})
+            _outdoor_aqi = {
+                "aqi": d.get("aqi"),
+                "pm25": iaqi.get("pm25", {}).get("v"),
+                "temperature": iaqi.get("t", {}).get("v"),
+                "humidity": iaqi.get("h", {}).get("v"),
+                "wind": iaqi.get("w", {}).get("v"),
+                "station": d.get("city", {}).get("name", "Unknown"),
+                "updated": d.get("time", {}).get("s", ""),
+            }
+            log.info("Outdoor AQI (WAQI): %s (station: %s)", _outdoor_aqi["aqi"], _outdoor_aqi["station"])
+            return True
+    except Exception as e:
+        log.warning("WAQI fetch failed: %s", e)
+    return False
+
+
+def _poll_outdoor_aqi():
+    """Fetch outdoor AQI. Tries IQAir first (local station), falls back to WAQI."""
+    global _last_outdoor_poll
+    if not IQAIR_KEY and not WAQI_TOKEN:
+        return
+
+    # Only poll every 15 minutes
+    if time.time() - _last_outdoor_poll < OUTDOOR_POLL_INTERVAL:
+        return
+
+    configs = _load_device_configs_raw()
+    outdoor_cfg = configs.get("outdoor", {})
+    lat = outdoor_cfg.get("lat", 18.75)
+    lon = outdoor_cfg.get("lon", 98.93)
+
+    # IQAir first (returns Mae Hia — closest to Hang Dong), then WAQI fallback
+    if not _poll_outdoor_iqair(lat, lon):
+        _poll_outdoor_waqi(lat, lon)
+
+    _last_outdoor_poll = time.time()
+
+
 def _poll_all_devices():
     """Poll all devices and update the cached status."""
-    global _cached_status, _last_poll_time
+    global _cached_status, _last_poll_time, _previous_aqi
     devices = _load_device_configs()
     if not devices:
         return
@@ -146,6 +281,15 @@ def _poll_all_devices():
         futures = {pool.submit(_poll_device, d): d for d in devices}
         for fut in as_completed(futures):
             results.append(fut.result())
+
+    # Spike detection: compare new AQI with previous
+    for r in results:
+        prev = _previous_aqi.get(r["id"])
+        cur = r.get("aqi")
+        r["spike"] = (prev is not None and cur is not None and cur - prev > 50)
+
+    # Store current values as previous for next cycle
+    _previous_aqi = {r["id"]: r.get("aqi") for r in results}
 
     id_order = {d["id"]: i for i, d in enumerate(devices)}
     results.sort(key=lambda r: id_order.get(r["id"], 999))
@@ -163,6 +307,14 @@ def _background_poller():
             log.info("Poll complete: %d/%d online", online, len(_cached_status))
         except Exception as e:
             log.error("Background poll error: %s", e)
+        try:
+            _poll_outdoor_aqi()
+        except Exception as e:
+            log.error("Outdoor AQI poll error: %s", e)
+        try:
+            _check_schedules()
+        except Exception as e:
+            log.error("Schedule check error: %s", e)
         time.sleep(POLL_INTERVAL)
 
 
@@ -178,11 +330,11 @@ def index():
 
 @app.route("/api/status")
 def api_status():
-    if _cached_status:
-        return jsonify(_cached_status)
-    # First request before background poll completes — poll now
-    _poll_all_devices()
-    return jsonify(_cached_status)
+    if not _cached_status:
+        # First request before background poll completes — poll now
+        _poll_all_devices()
+        _poll_outdoor_aqi()
+    return jsonify({"devices": _cached_status, "outdoor": _outdoor_aqi, "schedules": _load_schedules()})
 
 
 def _get_device_for_command(device_id: str):
@@ -218,6 +370,7 @@ def api_power(device_id):
             power = not current
 
         dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": power}])
+        _manual_override[device_id] = time.time()  # suppress scheduler
         return jsonify({"ok": True, "power": power})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -256,37 +409,253 @@ def api_fan_level(device_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/device/<device_id>/filter_reset", methods=["POST"])
+def api_filter_reset(device_id):
+    dev_cfg, dev = _get_device_for_command(device_id)
+    if dev is None:
+        return jsonify({"error": "Device offline or not found"}), 503
+
+    try:
+        # Try MiOT action first (standard reset-filter-life action)
+        action_ok = False
+        try:
+            result = dev.send("action", {"did": "filter_reset", "siid": 4, "aiid": 1, "in": []})
+            code = result.get("code", -1) if isinstance(result, dict) else -1
+            action_ok = (code == 0)
+        except Exception:
+            pass  # Action not supported — fall through to set_properties
+
+        if not action_ok:
+            # Fallback: set filter properties directly
+            result = dev.send("set_properties", [
+                {"did": "filter_life", "siid": 4, "piid": 1, "value": 100},
+                {"did": "filter_hours", "siid": 4, "piid": 3, "value": 0},
+            ])
+            # Check if properties are read-only (-4004)
+            if all(p.get("code") == -4004 for p in result):
+                model = dev_cfg.get("model", "")
+                hint = FILTER_RESET_GUIDE.get(model, "Hold reset button 6+ sec in standby")
+                return jsonify({"error": hint, "manual_reset": True}), 422
+
+        # Re-poll device to get fresh values
+        fresh = _poll_device(dev_cfg)
+        with _device_lock:
+            for i, s in enumerate(_cached_status):
+                if s["id"] == device_id:
+                    _cached_status[i] = fresh
+                    break
+
+        return jsonify({
+            "ok": True,
+            "filter_life": fresh.get("filter_life"),
+            "filter_hours_used": fresh.get("filter_hours_used"),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/device/<device_id>/buzzer", methods=["POST"])
+def api_buzzer(device_id):
+    dev_cfg, dev = _get_device_for_command(device_id)
+    if dev is None:
+        return jsonify({"error": "Device offline or not found"}), 503
+    try:
+        enabled = bool(request.json.get("enabled", True)) if request.json else True
+        dev.send("set_properties", [{"did": "buzzer", "siid": 6, "piid": 1, "value": enabled}])
+        return jsonify({"ok": True, "buzzer": enabled})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/device/<device_id>/child_lock", methods=["POST"])
+def api_child_lock(device_id):
+    dev_cfg, dev = _get_device_for_command(device_id)
+    if dev is None:
+        return jsonify({"error": "Device offline or not found"}), 503
+    try:
+        enabled = bool(request.json.get("enabled", True)) if request.json else True
+        dev.send("set_properties", [{"did": "child_lock", "siid": 8, "piid": 1, "value": enabled}])
+        return jsonify({"ok": True, "child_lock": enabled})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/device/<device_id>/brightness", methods=["POST"])
+def api_brightness(device_id):
+    dev_cfg, dev = _get_device_for_command(device_id)
+    if dev is None:
+        return jsonify({"error": "Device offline or not found"}), 503
+    try:
+        level = int(request.json.get("level", 2)) if request.json else 2
+        level = max(0, min(2, level))
+        model = dev_cfg.get("model", "")
+        sp = SCREEN_PROP.get(model)
+        if not sp:
+            return jsonify({"error": "Unknown screen property for this model"}), 400
+        cmds = [{"did": "brightness", "siid": sp["siid"], "piid": sp["piid"], "value": level}]
+        # mb4 also has a separate on/off bool for screen
+        if model == "zhimi.airpurifier.mb4":
+            cmds.append({"did": "screen_on", "siid": 7, "piid": 1, "value": level > 0})
+        dev.send("set_properties", cmds)
+        return jsonify({"ok": True, "brightness": level})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Scheduling
+# ---------------------------------------------------------------------------
+
+def _load_schedules() -> dict:
+    try:
+        with open(SCHEDULES_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_schedules(schedules: dict):
+    with open(SCHEDULES_FILE, "w") as f:
+        json.dump(schedules, f, indent=2)
+
+
+def _is_in_active_window(on_time: str, off_time: str) -> bool:
+    """Check if current time falls within the on→off window. Handles overnight wrap."""
+    from datetime import datetime
+    now = datetime.now()
+    h, m = map(int, on_time.split(":"))
+    on_min = h * 60 + m
+    h, m = map(int, off_time.split(":"))
+    off_min = h * 60 + m
+    cur_min = now.hour * 60 + now.minute
+
+    if on_min <= off_min:
+        # Normal: on=07:00 off=23:00
+        return on_min <= cur_min < off_min
+    else:
+        # Overnight: on=20:00 off=08:00
+        return cur_min >= on_min or cur_min < off_min
+
+
+def _check_schedules():
+    """Check schedules and send power commands as needed."""
+    schedules = _load_schedules()
+    if not schedules:
+        return
+
+    for dev_id, sched_list in schedules.items():
+        # Support both legacy {"on","off"} and new [{"on","off"}, ...] format
+        if isinstance(sched_list, dict):
+            sched_list = [sched_list]
+        if not isinstance(sched_list, list) or not sched_list:
+            continue
+
+        # Device should be on if ANY schedule window is active
+        should_be_on = any(
+            _is_in_active_window(s.get("on", ""), s.get("off", ""))
+            for s in sched_list if s.get("on") and s.get("off")
+        )
+        target_state = "on" if should_be_on else "off"
+
+        # Skip if we already set this state
+        if _schedule_last_state.get(dev_id) == target_state:
+            # Check for manual override — if state changed, a boundary was crossed
+            if dev_id in _manual_override:
+                continue
+            # Already in correct state, nothing to do
+            # But check if device actually matches (e.g. after restart)
+            device_status = next((d for d in _cached_status if d["id"] == dev_id), None)
+            if device_status and device_status.get("online"):
+                actual_on = device_status.get("power", False)
+                if actual_on == should_be_on:
+                    continue
+            else:
+                continue
+
+        # State transition — clear manual override
+        if _schedule_last_state.get(dev_id) != target_state:
+            _manual_override.pop(dev_id, None)
+
+        # Skip if manual override is active
+        if dev_id in _manual_override:
+            continue
+
+        # Find the device and send power command
+        device_status = next((d for d in _cached_status if d["id"] == dev_id), None)
+        if not device_status or not device_status.get("online"):
+            continue
+
+        actual_on = device_status.get("power", False)
+        if actual_on == should_be_on:
+            _schedule_last_state[dev_id] = target_state
+            continue
+
+        try:
+            _, dev = _get_device_for_command(dev_id)
+            if dev:
+                dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": should_be_on}])
+                log.info("Schedule: %s turned %s", dev_id, target_state)
+                _schedule_last_state[dev_id] = target_state
+        except Exception as e:
+            log.warning("Schedule command failed for %s: %s", dev_id, e)
+
+
+@app.route("/api/schedules")
+def api_schedules():
+    return jsonify(_load_schedules())
+
+
+@app.route("/api/device/<device_id>/schedule", methods=["POST"])
+def api_schedule(device_id):
+    """Set schedules for a device. Body: {"schedules": [{"on":"07:00","off":"23:00"}, ...]} or {"clear": true}"""
+    schedules = _load_schedules()
+    data = request.json or {}
+
+    if data.get("clear"):
+        schedules.pop(device_id, None)
+        _schedule_last_state.pop(device_id, None)
+        _manual_override.pop(device_id, None)
+    elif "schedules" in data:
+        # Array of {on, off} pairs
+        schedules[device_id] = data["schedules"]
+    elif data.get("on") and data.get("off"):
+        # Legacy single schedule support
+        schedules[device_id] = [{"on": data["on"], "off": data["off"]}]
+    else:
+        schedules.pop(device_id, None)
+        _schedule_last_state.pop(device_id, None)
+        _manual_override.pop(device_id, None)
+
+    _save_schedules(schedules)
+    return jsonify({"ok": True, "schedules": schedules})
+
+
+def _set_power_one(dev_cfg: dict, power: bool) -> dict:
+    """Set power for a single device. Used by all_on/all_off in parallel."""
+    try:
+        _, dev = _get_device_for_command(dev_cfg["id"])
+        if dev:
+            dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": power}])
+            _manual_override[dev_cfg["id"]] = time.time()
+            return {"id": dev_cfg["id"], "ok": True}
+        return {"id": dev_cfg["id"], "error": "offline"}
+    except Exception as e:
+        return {"id": dev_cfg["id"], "error": str(e)}
+
+
 @app.route("/api/all_on", methods=["POST"])
 def api_all_on():
     devices = _load_device_configs()
-    results = []
-    for d in devices:
-        try:
-            _, dev = _get_device_for_command(d["id"])
-            if dev:
-                dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": True}])
-                results.append({"id": d["id"], "ok": True})
-            else:
-                results.append({"id": d["id"], "error": "offline"})
-        except Exception as e:
-            results.append({"id": d["id"], "error": str(e)})
+    with ThreadPoolExecutor(max_workers=min(len(devices), 10)) as pool:
+        results = list(pool.map(lambda d: _set_power_one(d, True), devices))
     return jsonify(results)
 
 
 @app.route("/api/all_off", methods=["POST"])
 def api_all_off():
     devices = _load_device_configs()
-    results = []
-    for d in devices:
-        try:
-            _, dev = _get_device_for_command(d["id"])
-            if dev:
-                dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": False}])
-                results.append({"id": d["id"], "ok": True})
-            else:
-                results.append({"id": d["id"], "error": "offline"})
-        except Exception as e:
-            results.append({"id": d["id"], "error": str(e)})
+    with ThreadPoolExecutor(max_workers=min(len(devices), 10)) as pool:
+        results = list(pool.map(lambda d: _set_power_one(d, False), devices))
     return jsonify(results)
 
 
@@ -299,6 +668,8 @@ if __name__ == "__main__":
 
     if not MIIO_AVAILABLE:
         log.warning("python-miio not installed — running in demo mode")
+    if not IQAIR_KEY and not WAQI_TOKEN:
+        log.warning("IQAIR_KEY/WAQI_TOKEN not set — outdoor AQI disabled")
 
     # Start background poller
     poller = threading.Thread(target=_background_poller, daemon=True)

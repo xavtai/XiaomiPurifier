@@ -23,7 +23,9 @@
   --aqi-good: #22c55e;
   --aqi-mod: #eab308;
   --aqi-unhealthy: #f97316;
-  --aqi-hazard: #ef4444;
+  --aqi-bad: #ef4444;
+  --aqi-vbad: #8b5cf6;
+  --aqi-hazard: #7f1d1d;
   --accent: #3b82f6;
   --accent-glow: rgba(59,130,246,0.2);
   --filter-warn: #ef4444;
@@ -195,7 +197,10 @@ body::before {
   position: relative;
   overflow: hidden;
   animation: card-in 0.3s ease both;
+  display: flex;
+  flex-direction: column;
 }
+.card .mode-row { margin-top: auto; }
 .card:nth-child(1) { animation-delay: 0s; }
 .card:nth-child(2) { animation-delay: 0.04s; }
 .card:nth-child(3) { animation-delay: 0.04s; }
@@ -215,6 +220,8 @@ body::before {
 .card.aqi-good-card::before { background: var(--aqi-good); }
 .card.aqi-mod-card::before { background: var(--aqi-mod); }
 .card.aqi-unhealthy-card::before { background: var(--aqi-unhealthy); }
+.card.aqi-bad-card::before { background: var(--aqi-bad); }
+.card.aqi-vbad-card::before { background: var(--aqi-vbad); }
 .card.aqi-hazard-card::before { background: var(--aqi-hazard); }
 .card.offline-card { opacity: 0.4; }
 .card.off-card { opacity: 0.65; }
@@ -229,7 +236,7 @@ body::before {
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 1.2;
-  max-width: 70%;
+  white-space: nowrap;
 }
 .power-toggle {
   width: 44px;
@@ -265,7 +272,7 @@ body::before {
   letter-spacing: -0.03em;
 }
 .aqi-num.active { animation: breathe 3s ease-in-out infinite; }
-@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
 .aqi-label {
   font-size: 0.75rem;
   color: var(--text-secondary);
@@ -276,6 +283,8 @@ body::before {
 .aqi-good-color { color: var(--aqi-good); }
 .aqi-mod-color { color: var(--aqi-mod); }
 .aqi-unhealthy-color { color: var(--aqi-unhealthy); }
+.aqi-bad-color { color: var(--aqi-bad); }
+.aqi-vbad-color { color: var(--aqi-vbad); }
 .aqi-hazard-color { color: var(--aqi-hazard); }
 .stats-row {
   display: flex;
@@ -296,9 +305,18 @@ body::before {
   overflow: hidden;
 }
 .filter-bar-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
-.filter-meta { display: flex; justify-content: space-between; margin-top: 3px; }
+.filter-meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
 .filter-pct { font-family: var(--font-data); font-size: 0.75rem; font-weight: 500; }
 .filter-hrs { font-size: 0.7rem; color: var(--text-muted); }
+.filter-reset-btn {
+  font-family: var(--font-ui); font-size: 0.65rem; font-weight: 500;
+  background: rgba(255,255,255,0.06); color: var(--text-secondary);
+  border: 1px solid var(--border-strong); border-radius: 4px;
+  padding: 1px 8px; cursor: pointer; margin-left: auto;
+  transition: background 0.15s, color 0.15s;
+}
+.filter-reset-btn:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+.filter-warning .filter-reset-btn { margin-left: auto; }
 .filter-warning {
   background: repeating-linear-gradient(-45deg, rgba(239,68,68,0.08), rgba(239,68,68,0.08) 4px, transparent 4px, transparent 8px);
   border: 1px solid rgba(239,68,68,0.3);
@@ -424,6 +442,151 @@ body::before {
   background: rgba(239,68,68,0.9);
   color: white;
 }
+.outdoor-bar {
+  margin: 0 16px 4px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+.outdoor-bar .outdoor-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.outdoor-aqi-num {
+  font-family: var(--font-data);
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.outdoor-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.outdoor-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.outdoor-station {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+.outdoor-comparison {
+  font-family: var(--font-data);
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+.card.spike-card {
+  border-color: var(--aqi-unhealthy);
+  animation: spike-pulse 1.5s ease-in-out infinite;
+}
+@keyframes spike-pulse {
+  0%, 100% { border-color: var(--aqi-unhealthy); box-shadow: none; }
+  50% { border-color: var(--aqi-bad); box-shadow: 0 0 12px rgba(249,115,22,0.3); }
+}
+.spike-badge {
+  display: inline-block;
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: var(--aqi-unhealthy);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: 4px;
+  vertical-align: super;
+}
+.gear-btn {
+  background: none; border: none; color: var(--text-muted); font-size: 0.85rem;
+  cursor: pointer; padding: 2px 4px; transition: color 0.15s;
+}
+.gear-btn:hover { color: var(--text); }
+.lock-indicator {
+  font-size: 0.6rem; color: var(--aqi-mod); margin-left: 4px;
+}
+.schedule-label {
+  font-family: var(--font-data); font-size: 0.6rem; color: var(--text-muted);
+  margin-bottom: 4px; text-align: center;
+}
+.settings-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  z-index: 200; display: none;
+}
+.settings-backdrop.open { display: block; }
+.settings-modal {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: var(--surface-raised); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); padding: 20px; z-index: 201;
+  width: min(360px, 90vw); display: none;
+}
+.settings-modal.open { display: block; }
+.settings-title {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px; font-weight: 600; font-size: 0.95rem;
+}
+.settings-close {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 1.2rem; cursor: pointer; padding: 0 4px;
+}
+.settings-close:hover { color: var(--text); }
+.settings-section {
+  border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;
+}
+.settings-section:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.settings-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0;
+}
+.settings-label {
+  font-size: 0.8rem; color: var(--text-secondary);
+}
+.settings-toggle {
+  width: 36px; height: 20px; border-radius: 10px; border: none;
+  cursor: pointer; position: relative; transition: background 0.2s;
+}
+.settings-toggle.on { background: var(--aqi-good); }
+.settings-toggle.off { background: var(--text-muted); }
+.settings-toggle::after {
+  content: ''; position: absolute; top: 2px; width: 16px; height: 16px;
+  border-radius: 50%; background: white; transition: left 0.2s;
+}
+.settings-toggle.on::after { left: 18px; }
+.settings-toggle.off::after { left: 2px; }
+.brightness-group { display: flex; gap: 3px; }
+.brightness-btn {
+  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-muted); font-family: var(--font-ui);
+  font-size: 0.7rem; font-weight: 500; cursor: pointer; transition: all 0.15s;
+}
+.brightness-btn.active {
+  background: var(--accent); border-color: var(--accent); color: white;
+}
+.schedule-inputs {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.schedule-inputs label { font-size: 0.7rem; color: var(--text-muted); }
+.schedule-inputs input[type="time"] {
+  background: var(--surface); border: 1px solid var(--border-strong);
+  border-radius: 6px; color: var(--text); font-family: var(--font-data);
+  font-size: 0.75rem; padding: 4px 6px;
+}
+.schedule-inputs button {
+  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-secondary); font-family: var(--font-ui);
+  font-size: 0.7rem; cursor: pointer; transition: all 0.15s;
+}
+.schedule-inputs button:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+.schedule-inputs .save-btn { border-color: rgba(34,197,94,0.3); color: var(--aqi-good); }
 </style>
 </head>
 <body>
@@ -446,23 +609,29 @@ body::before {
 </div>
 <div class="error-bar" id="errorBar"></div>
 <div id="summaryBar" class="summary"></div>
+<div class="outdoor-bar" id="outdoorBar" style="display:none;"></div>
 <div class="loading-screen" id="loadingScreen">
   <div class="loading-rings"></div>
   <div class="loading-text">Connecting to purifiers...</div>
 </div>
 <div class="grid" id="grid" style="display:none;"></div>
 <div class="toast" id="toast"></div>
+<div class="settings-backdrop" id="settingsBackdrop" onclick="closeSettings()"></div>
+<div class="settings-modal" id="settingsModal"></div>
 <script>
 const API = window.location.pathname.replace(/\/+$/, '');
 let devices = [];
+let outdoor = null;
+let schedules = {};
 let refreshTimer = null;
-let expandedCard = null;
 
 function aqiColor(aqi) {
   if (aqi == null) return 'var(--text-muted)';
   if (aqi <= 50) return 'var(--aqi-good)';
   if (aqi <= 100) return 'var(--aqi-mod)';
   if (aqi <= 150) return 'var(--aqi-unhealthy)';
+  if (aqi <= 200) return 'var(--aqi-bad)';
+  if (aqi <= 300) return 'var(--aqi-vbad)';
   return 'var(--aqi-hazard)';
 }
 function aqiCls(aqi) {
@@ -470,13 +639,17 @@ function aqiCls(aqi) {
   if (aqi <= 50) return 'aqi-good';
   if (aqi <= 100) return 'aqi-mod';
   if (aqi <= 150) return 'aqi-unhealthy';
+  if (aqi <= 200) return 'aqi-bad';
+  if (aqi <= 300) return 'aqi-vbad';
   return 'aqi-hazard';
 }
 function aqiLabel(aqi) {
   if (aqi == null) return 'N/A';
   if (aqi <= 50) return 'Good';
   if (aqi <= 100) return 'Moderate';
-  if (aqi <= 150) return 'Unhealthy';
+  if (aqi <= 150) return 'Sensitive';
+  if (aqi <= 200) return 'Unhealthy';
+  if (aqi <= 300) return 'Very Unhealthy';
   return 'Hazardous';
 }
 function filterColor(pct) {
@@ -487,6 +660,24 @@ function filterColor(pct) {
 }
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
+var FILTER_RESET_GUIDE = {
+  'zhimi.airpurifier.mb4': '3C: Hold RIGHT button 7 sec in standby (3 beeps + green light)',
+  'xiaomi.airp.cpa4':      '4 Compact: Hold POWER button 6 sec in standby (sound + green light)',
+  'xiaomi.airp.va2b':      '4 Pro: Insert paperclip in reset pin-hole (near power cord) 5 sec',
+  'zhimi.airp.mb5':        '4: Hold POWER + DISPLAY buttons together 7 sec (2 beeps + green blink)',
+  'zhimi.airp.rmb1':       '4 Lite: Hold RESET button on back panel 6 sec (short sound)',
+};
+
+function filterTimeEstimate(life, hours) {
+  if (life == null || life <= 0) return 'Replace now';
+  if (hours == null || hours <= 0 || life >= 100) return 'New filter';
+  var remainHours = hours * life / (100 - life);
+  var days = Math.round(remainHours / 24);
+  if (days >= 60) return '~' + Math.round(days / 30) + 'mo left';
+  if (days >= 1) return '~' + days + 'd left';
+  return '<1d left';
+}
+
 function renderSummary() {
   const bar = document.getElementById('summaryBar');
   const online = devices.filter(d => d.online).length;
@@ -495,9 +686,19 @@ function renderSummary() {
   const avgAqi = aqis.length ? Math.round(aqis.reduce((s, d) => s + d.aqi, 0) / aqis.length) : 0;
   const lowFilter = devices.filter(d => d.filter_life != null && d.filter_life <= 15);
   bar.textContent = '';
+
+  // Worst room chip: show highest PM2.5 room if any is >50, else show avg
+  var aqiChip;
+  var worst = aqis.length ? aqis.reduce((w, d) => d.aqi > w.aqi ? d : w) : null;
+  if (worst && worst.aqi > 50) {
+    aqiChip = {text: worst.name + ': ' + worst.aqi, color: aqiColor(worst.aqi)};
+  } else {
+    aqiChip = {text: 'Avg PM2.5: ' + avgAqi, color: aqiColor(avgAqi)};
+  }
+
   const chips = [
     {text: running + '/' + online + ' running', color: 'var(--aqi-good)'},
-    {text: 'Avg PM2.5: ' + avgAqi, color: aqiColor(avgAqi)},
+    aqiChip,
   ];
   if (lowFilter.length > 0) {
     chips.push({text: lowFilter.length + ' filter' + (lowFilter.length > 1 ? 's' : '') + ' low', color: 'var(--filter-warn)', warn: true});
@@ -519,47 +720,49 @@ function createCard(d) {
   const isOn = d.online && d.power;
   const ac = aqiCls(d.aqi);
   const cardCls = !d.online ? 'offline-card' : (!d.power ? 'off-card' : ac + '-card');
-  const modes = ['Auto', 'Silent', 'Custom', 'Fan'];
+  const modes = ['Auto', 'Sleep', 'Manual', 'Fan'];
   const curMode = (d.mode || '').toLowerCase();
-  const isExpanded = expandedCard === d.id;
   const needsFilter = d.filter_life != null && d.filter_life <= 15;
+  const sched = schedules[d.id];
 
   const card = document.createElement('div');
-  card.className = 'card ' + cardCls + (isExpanded ? ' expanded' : '');
+  card.className = 'card ' + cardCls + (d.spike ? ' spike-card' : '');
 
-  // Header
+  // Header: name + gear/lock on left, power toggle on right
   const head = document.createElement('div');
   head.className = 'card-head';
+  const nameWrap = document.createElement('div');
+  nameWrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
   const nameEl = document.createElement('div');
   nameEl.className = 'room-name';
   nameEl.textContent = d.name;
+  nameWrap.appendChild(nameEl);
+  const rightWrap = document.createElement('div');
+  rightWrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex-shrink:0;';
+  if (d.child_lock) {
+    const lockIcon = document.createElement('span');
+    lockIcon.className = 'lock-indicator';
+    lockIcon.textContent = '\uD83D\uDD12';
+    lockIcon.title = 'Child lock on';
+    rightWrap.appendChild(lockIcon);
+  }
+  const gear = document.createElement('button');
+  gear.className = 'gear-btn';
+  gear.textContent = '\u2699';
+  gear.onclick = function(e) { e.stopPropagation(); openSettings(d.id); };
   const toggle = document.createElement('button');
   toggle.className = 'power-toggle ' + (isOn ? 'on' : 'off');
   toggle.disabled = !d.online;
   toggle.onclick = function(e) { e.stopPropagation(); togglePower(d.id, isOn); };
-  head.appendChild(nameEl);
-  head.appendChild(toggle);
+  rightWrap.appendChild(gear);
+  rightWrap.appendChild(toggle);
+  head.appendChild(nameWrap);
+  head.appendChild(rightWrap);
   card.appendChild(head);
-
-  // Filter warning
-  if (needsFilter) {
-    const warn = document.createElement('div');
-    warn.className = 'filter-warning';
-    const wIcon = document.createElement('span');
-    wIcon.textContent = '\u26A0';
-    wIcon.style.fontSize = '0.7rem';
-    const wText = document.createElement('span');
-    wText.className = 'warn-text';
-    wText.textContent = 'FILTER ' + d.filter_life + '%' + (d.filter_life === 0 ? ' \u2014 REPLACE NOW' : '');
-    warn.appendChild(wIcon);
-    warn.appendChild(wText);
-    card.appendChild(warn);
-  }
 
   // AQI
   const aqiDiv = document.createElement('div');
   aqiDiv.className = 'aqi-display';
-  aqiDiv.onclick = function() { toggleExpand(d.id); };
   const aqiNum = document.createElement('div');
   aqiNum.className = 'aqi-num ' + ac + '-color' + (isOn ? ' active' : '');
   aqiNum.textContent = d.aqi != null ? d.aqi : '--';
@@ -567,6 +770,12 @@ function createCard(d) {
   aqiLbl.className = 'aqi-label';
   aqiLbl.textContent = 'PM2.5 \u00B7 ' + aqiLabel(d.aqi);
   aqiDiv.appendChild(aqiNum);
+  if (d.spike) {
+    const badge = document.createElement('span');
+    badge.className = 'spike-badge';
+    badge.textContent = '\u2191 RISING';
+    aqiDiv.appendChild(badge);
+  }
   aqiDiv.appendChild(aqiLbl);
   card.appendChild(aqiDiv);
 
@@ -590,75 +799,111 @@ function createCard(d) {
   });
   card.appendChild(stats);
 
-  // Filter bar (non-warning)
-  if (d.filter_life != null && !needsFilter) {
+  // Schedule label (if set)
+  var schedArr = Array.isArray(sched) ? sched : (sched && sched.on ? [sched] : []);
+  if (schedArr.length > 0) {
+    const schedLabel = document.createElement('div');
+    schedLabel.className = 'schedule-label';
+    schedLabel.textContent = '\uD83D\uDD53 ' + schedArr.map(function(s) { return s.on + '\u2013' + s.off; }).join('  ');
+    card.appendChild(schedLabel);
+  }
+
+  // Filter section (always in same position — after stats)
+  if (d.filter_life != null) {
     const fsec = document.createElement('div');
     fsec.className = 'filter-section';
-    const track = document.createElement('div');
-    track.className = 'filter-bar-track';
-    const fill = document.createElement('div');
-    fill.className = 'filter-bar-fill';
-    fill.style.width = d.filter_life + '%';
-    fill.style.background = filterColor(d.filter_life);
-    track.appendChild(fill);
-    fsec.appendChild(track);
-    const meta = document.createElement('div');
-    meta.className = 'filter-meta';
-    const pct = document.createElement('span');
-    pct.className = 'filter-pct';
-    pct.style.color = filterColor(d.filter_life);
-    pct.textContent = d.filter_life + '%';
-    const hrs = document.createElement('span');
-    hrs.className = 'filter-hrs';
-    hrs.textContent = d.filter_hours_used != null ? d.filter_hours_used + 'h' : '';
-    meta.appendChild(pct);
-    meta.appendChild(hrs);
-    fsec.appendChild(meta);
+    if (needsFilter) {
+      const warn = document.createElement('div');
+      warn.className = 'filter-warning';
+      const wIcon = document.createElement('span');
+      wIcon.textContent = '\u26A0';
+      wIcon.style.fontSize = '0.7rem';
+      const wText = document.createElement('span');
+      wText.className = 'warn-text';
+      wText.textContent = 'FILTER ' + d.filter_life + '%' + (d.filter_life === 0 ? ' \u2014 REPLACE NOW' : '');
+      warn.appendChild(wIcon);
+      warn.appendChild(wText);
+      const wReset = document.createElement('button');
+      wReset.className = 'filter-reset-btn';
+      wReset.textContent = 'Reset';
+      wReset.title = FILTER_RESET_GUIDE[d.model] || 'Reset filter counter';
+      wReset.onclick = function(e) { e.stopPropagation(); resetFilter(d.id); };
+      warn.appendChild(wReset);
+      fsec.appendChild(warn);
+    } else {
+      const track = document.createElement('div');
+      track.className = 'filter-bar-track';
+      const fill = document.createElement('div');
+      fill.className = 'filter-bar-fill';
+      fill.style.width = d.filter_life + '%';
+      fill.style.background = filterColor(d.filter_life);
+      track.appendChild(fill);
+      fsec.appendChild(track);
+      const meta = document.createElement('div');
+      meta.className = 'filter-meta';
+      const pct = document.createElement('span');
+      pct.className = 'filter-pct';
+      pct.style.color = filterColor(d.filter_life);
+      pct.textContent = d.filter_life + '%';
+      const hrs = document.createElement('span');
+      hrs.className = 'filter-hrs';
+      hrs.textContent = filterTimeEstimate(d.filter_life, d.filter_hours_used);
+      meta.appendChild(pct);
+      meta.appendChild(hrs);
+      const fReset = document.createElement('button');
+      fReset.className = 'filter-reset-btn';
+      fReset.textContent = 'Reset';
+      fReset.title = FILTER_RESET_GUIDE[d.model] || 'Reset filter counter';
+      fReset.onclick = function(e) { e.stopPropagation(); resetFilter(d.id); };
+      meta.appendChild(fReset);
+      fsec.appendChild(meta);
+    }
     card.appendChild(fsec);
   }
 
-  // Mode buttons
+  // Mode buttons — renamed to match Xiaomi app
   const modeRow = document.createElement('div');
   modeRow.className = 'mode-row';
-  modes.forEach(m => {
+  var modeMap = [
+    {label: 'Auto', value: 'auto'},
+    {label: 'Sleep', value: 'silent'},
+    {label: 'Manual', value: 'favorite'},
+  ];
+  modeMap.forEach(function(m) {
     const btn = document.createElement('button');
-    var modeMatch = m === 'Custom' ? 'favorite' : m.toLowerCase();
-    btn.className = 'mode-btn' + (curMode === modeMatch ? ' active' : '');
-    btn.textContent = m;
+    btn.className = 'mode-btn' + (curMode === m.value ? ' active' : '');
+    btn.textContent = m.label;
     btn.disabled = !isOn;
-    btn.onclick = function(e) { e.stopPropagation(); setMode(d.id, m === 'Custom' ? 'favorite' : m.toLowerCase()); };
+    btn.onclick = function(e) { e.stopPropagation(); setMode(d.id, m.value); };
     modeRow.appendChild(btn);
   });
   card.appendChild(modeRow);
 
-  // Expandable fan control
-  const expandArea = document.createElement('div');
-  expandArea.className = 'card-expand-area';
-  const fanRow = document.createElement('div');
-  fanRow.className = 'fan-row';
-  fanRow.style.paddingTop = '6px';
-  const fanLbl = document.createElement('span');
-  fanLbl.className = 'fan-label';
-  fanLbl.textContent = 'Fan';
-  const slider = document.createElement('input');
-  slider.type = 'range';
-  slider.className = 'fan-slider';
-  slider.min = '0';
-  slider.max = '14';
-  slider.value = d.fan_level || 0;
-  slider.disabled = !isOn;
-  const fanVal = document.createElement('span');
-  fanVal.className = 'fan-val';
-  fanVal.textContent = d.fan_level || 0;
-  slider.oninput = function() { fanVal.textContent = this.value; };
-  slider.onchange = function(e) { e.stopPropagation(); setFan(d.id, this.value); };
-  fanRow.appendChild(fanLbl);
-  fanRow.appendChild(slider);
-  fanRow.appendChild(fanVal);
-  expandArea.appendChild(fanRow);
-  card.appendChild(expandArea);
+  // Fan slider — shown inline when in Manual (favorite) mode
+  if (isOn && curMode === 'favorite') {
+    const fanRow = document.createElement('div');
+    fanRow.className = 'fan-row';
+    fanRow.style.padding = '4px 0 2px';
+    const fanLbl = document.createElement('span');
+    fanLbl.className = 'fan-label';
+    fanLbl.textContent = 'Speed';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.className = 'fan-slider';
+    slider.min = '0';
+    slider.max = '14';
+    slider.value = d.fan_level || 0;
+    const fanVal = document.createElement('span');
+    fanVal.className = 'fan-val';
+    fanVal.textContent = d.fan_level || 0;
+    slider.oninput = function() { fanVal.textContent = this.value; };
+    slider.onchange = function(e) { e.stopPropagation(); setFan(d.id, this.value); };
+    fanRow.appendChild(fanLbl);
+    fanRow.appendChild(slider);
+    fanRow.appendChild(fanVal);
+    card.appendChild(fanRow);
+  }
 
-  card.addEventListener('click', function() { toggleExpand(d.id); });
   return card;
 }
 
@@ -668,9 +913,47 @@ function renderDevices() {
   devices.forEach(d => grid.appendChild(createCard(d)));
 }
 
-function toggleExpand(id) {
-  expandedCard = expandedCard === id ? null : id;
-  renderDevices();
+function renderOutdoor() {
+  const bar = document.getElementById('outdoorBar');
+  if (!outdoor || outdoor.aqi == null) { bar.style.display = 'none'; return; }
+  bar.style.display = '';
+  bar.textContent = '';
+  const ac = aqiCls(outdoor.aqi);
+
+  // Left side: AQI number + label + station
+  const left = document.createElement('div');
+  left.className = 'outdoor-left';
+  const num = document.createElement('div');
+  num.className = 'outdoor-aqi-num ' + ac + '-color';
+  num.textContent = outdoor.aqi;
+  const meta = document.createElement('div');
+  meta.className = 'outdoor-meta';
+  const label = document.createElement('div');
+  label.className = 'outdoor-label';
+  label.style.color = aqiColor(outdoor.aqi);
+  label.textContent = 'Outdoor \u00B7 ' + aqiLabel(outdoor.aqi);
+  const station = document.createElement('div');
+  station.className = 'outdoor-station';
+  station.textContent = outdoor.station || '';
+  meta.appendChild(label);
+  meta.appendChild(station);
+  left.appendChild(num);
+  left.appendChild(meta);
+  bar.appendChild(left);
+
+  // Right side: indoor vs outdoor comparison
+  const avgIndoor = devices.filter(function(d) { return d.aqi != null; });
+  const avg = avgIndoor.length ? Math.round(avgIndoor.reduce(function(s, d) { return s + d.aqi; }, 0) / avgIndoor.length) : null;
+  if (avg != null) {
+    const comp = document.createElement('div');
+    comp.className = 'outdoor-comparison';
+    comp.textContent = 'Indoor ' + avg + ' vs Outdoor ' + outdoor.aqi;
+    if (outdoor.pm25 != null) {
+      comp.appendChild(document.createElement('br'));
+      comp.appendChild(document.createTextNode(outdoor.pm25 + ' \u00B5g/m\u00B3'));
+    }
+    bar.appendChild(comp);
+  }
 }
 
 async function fetchStatus() {
@@ -679,11 +962,15 @@ async function fetchStatus() {
   try {
     const res = await fetch(API + '/api/status');
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    devices = await res.json();
+    const data = await res.json();
+    devices = data.devices || [];
+    outdoor = data.outdoor || null;
+    schedules = data.schedules || {};
     document.getElementById('loadingScreen').style.display = 'none';
     document.getElementById('grid').style.display = '';
     document.getElementById('errorBar').style.display = 'none';
     renderSummary();
+    renderOutdoor();
     renderDevices();
     document.getElementById('updateTime').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
   } catch (e) {
@@ -704,29 +991,238 @@ function showToast(msg, type) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = 'toast ' + type + ' show';
-  setTimeout(() => { t.className = 'toast'; }, 2000);
+  var dur = type === 'error' ? 4000 : 2000;
+  setTimeout(() => { t.className = 'toast'; }, dur);
 }
-async function post(url, body) {
+async function post(url, body, successMsg) {
   try {
     const res = await fetch(API + url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {}) });
     const data = await res.json();
     if (!res.ok) {
       showToast('Error: ' + (data.error || 'Unknown'), 'error');
+    } else if (Array.isArray(data)) {
+      // Bulk action — report partial failures
+      var ok = data.filter(function(r) { return r.ok; }).length;
+      var total = data.length;
+      if (ok === total) {
+        showToast(successMsg || (ok + '/' + total + ' done'), 'success');
+      } else {
+        showToast(ok + '/' + total + ' succeeded (' + (total - ok) + ' offline)', 'error');
+      }
     } else {
-      showToast('Command sent', 'success');
+      showToast(successMsg || 'Done', 'success');
     }
     clearTimeout(pendingRefresh);
-    pendingRefresh = setTimeout(fetchStatus, 2000);
+    pendingRefresh = setTimeout(function() {
+      fetchStatus().then(function() {
+        if (settingsDeviceId) openSettings(settingsDeviceId);
+      });
+    }, 2000);
   } catch (e) {
     showToast('Connection failed', 'error');
   }
 }
 
-function togglePower(id, isOn) { post('/api/device/' + id + '/power', {action: isOn ? 'off' : 'on'}); }
-function setMode(id, mode) { post('/api/device/' + id + '/mode', {mode: mode}); }
-function setFan(id, level) { post('/api/device/' + id + '/fan_level', {level: parseInt(level)}); }
-function allOn() { post('/api/all_on'); }
-function allOff() { post('/api/all_off'); }
+function togglePower(id, isOn) { post('/api/device/' + id + '/power', {action: isOn ? 'off' : 'on'}, isOn ? 'Turned off' : 'Turned on'); }
+function setMode(id, mode) {
+  var names = {auto:'Auto', silent:'Sleep', favorite:'Manual', fan:'Fan'};
+  post('/api/device/' + id + '/mode', {mode: mode}, 'Mode: ' + (names[mode] || mode));
+}
+function setFan(id, level) {
+  // Auto-switch to Custom mode so the fan level takes effect
+  fetch(API + '/api/device/' + id + '/mode', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{"mode":"favorite"}' });
+  post('/api/device/' + id + '/fan_level', {level: parseInt(level)}, 'Fan level: ' + level);
+}
+function resetFilter(id) {
+  if (!confirm('Reset filter counter?\nOnly do this after replacing the filter.')) return;
+  post('/api/device/' + id + '/filter_reset', {}, 'Filter reset');
+}
+function allOn() {
+  if (!confirm('Turn on all purifiers?')) return;
+  post('/api/all_on', {}, 'All purifiers on');
+}
+function allOff() {
+  if (!confirm('Turn off all purifiers?')) return;
+  post('/api/all_off', {}, 'All purifiers off');
+}
+
+// Settings modal
+var settingsDeviceId = null;
+
+function openSettings(id) {
+  settingsDeviceId = id;
+  var d = devices.find(function(x) { return x.id === id; });
+  if (!d) return;
+  var sched = schedules[id] || {};
+  var modal = document.getElementById('settingsModal');
+  modal.textContent = '';
+
+  // Title
+  var title = document.createElement('div');
+  title.className = 'settings-title';
+  var titleText = document.createTextNode(d.name + ' Settings');
+  var closeBtn = document.createElement('button');
+  closeBtn.className = 'settings-close';
+  closeBtn.textContent = '\u00D7';
+  closeBtn.onclick = closeSettings;
+  title.appendChild(titleText);
+  title.appendChild(closeBtn);
+  modal.appendChild(title);
+
+  // Buzzer toggle
+  var sec1 = document.createElement('div');
+  sec1.className = 'settings-section';
+  var row1 = document.createElement('div');
+  row1.className = 'settings-row';
+  var lbl1 = document.createElement('span');
+  lbl1.className = 'settings-label';
+  lbl1.textContent = 'Notification Sound';
+  var tog1 = document.createElement('button');
+  tog1.className = 'settings-toggle ' + (d.buzzer ? 'on' : 'off');
+  tog1.onclick = function() { post('/api/device/' + id + '/buzzer', {enabled: !d.buzzer}, d.buzzer ? 'Sound off' : 'Sound on'); };
+  row1.appendChild(lbl1);
+  row1.appendChild(tog1);
+  sec1.appendChild(row1);
+
+  // Child lock toggle
+  var row2 = document.createElement('div');
+  row2.className = 'settings-row';
+  var lbl2 = document.createElement('span');
+  lbl2.className = 'settings-label';
+  lbl2.textContent = 'Child Lock';
+  var tog2 = document.createElement('button');
+  tog2.className = 'settings-toggle ' + (d.child_lock ? 'on' : 'off');
+  tog2.onclick = function() { post('/api/device/' + id + '/child_lock', {enabled: !d.child_lock}, d.child_lock ? 'Lock off' : 'Lock on'); };
+  row2.appendChild(lbl2);
+  row2.appendChild(tog2);
+  sec1.appendChild(row2);
+
+  // Brightness buttons
+  var row3 = document.createElement('div');
+  row3.className = 'settings-row';
+  var lbl3 = document.createElement('span');
+  lbl3.className = 'settings-label';
+  lbl3.textContent = 'Display';
+  var bgrp = document.createElement('div');
+  bgrp.className = 'brightness-group';
+  var bMap = [0, 1, 2]; // Off=0, Dim=1, Bright=2
+  var curB = d.brightness != null ? d.brightness : -1;
+  // Map current brightness to button index: 0=Off, 1=Dim, >=2=Bright
+  var activeBIdx = curB <= 0 ? 0 : (curB === 1 ? 1 : 2);
+  ['Off', 'Dim', 'Bright'].forEach(function(label, i) {
+    var btn = document.createElement('button');
+    btn.className = 'brightness-btn' + (activeBIdx === i ? ' active' : '');
+    btn.textContent = label;
+    btn.onclick = function() { post('/api/device/' + id + '/brightness', {level: i}, 'Display: ' + label); };
+    bgrp.appendChild(btn);
+  });
+  row3.appendChild(lbl3);
+  row3.appendChild(bgrp);
+  sec1.appendChild(row3);
+  modal.appendChild(sec1);
+
+  // Schedule section — supports multiple on/off pairs
+  var sec3 = document.createElement('div');
+  sec3.className = 'settings-section';
+  var schedHeader = document.createElement('div');
+  schedHeader.className = 'settings-row';
+  var schedLbl = document.createElement('span');
+  schedLbl.className = 'settings-label';
+  schedLbl.textContent = 'Schedules';
+  var addBtn = document.createElement('button');
+  addBtn.className = 'brightness-btn';
+  addBtn.textContent = '+ Add';
+  addBtn.onclick = function() { addScheduleRow(sec3, id, '', ''); };
+  schedHeader.appendChild(schedLbl);
+  schedHeader.appendChild(addBtn);
+  sec3.appendChild(schedHeader);
+
+  // Render existing schedule rows (no pre-fill when empty)
+  var schedList = Array.isArray(sched) ? sched : (sched && sched.on ? [sched] : []);
+  // Action row for Save/Clear — only shown when there are schedule rows
+  var actionRow = document.createElement('div');
+  actionRow.className = 'schedule-inputs';
+  actionRow.style.marginTop = '6px';
+  if (schedList.length > 0) {
+    schedList.forEach(function(s) { addScheduleRow(sec3, id, s.on || '', s.off || ''); });
+  }
+  sec3.appendChild(actionRow);
+  modal.appendChild(sec3);
+
+  modal.classList.add('open');
+  document.getElementById('settingsBackdrop').classList.add('open');
+}
+
+function closeSettings() {
+  document.getElementById('settingsModal').classList.remove('open');
+  document.getElementById('settingsBackdrop').classList.remove('open');
+  settingsDeviceId = null;
+}
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && settingsDeviceId) closeSettings(); });
+
+function addScheduleRow(container, id, onVal, offVal) {
+  var row = document.createElement('div');
+  row.className = 'schedule-inputs sched-row';
+  var onLbl = document.createElement('label');
+  onLbl.textContent = 'On';
+  var onInput = document.createElement('input');
+  onInput.type = 'time';
+  onInput.className = 'sched-on';
+  onInput.value = onVal;
+  var offLbl = document.createElement('label');
+  offLbl.textContent = 'Off';
+  var offInput = document.createElement('input');
+  offInput.type = 'time';
+  offInput.className = 'sched-off';
+  offInput.value = offVal;
+  var removeBtn = document.createElement('button');
+  removeBtn.className = 'brightness-btn';
+  removeBtn.textContent = '\u00D7';
+  removeBtn.onclick = function() { row.remove(); };
+  row.appendChild(onLbl);
+  row.appendChild(onInput);
+  row.appendChild(offLbl);
+  row.appendChild(offInput);
+  row.appendChild(removeBtn);
+  // Insert before the action row (last child)
+  var children = container.children;
+  container.insertBefore(row, children[children.length - 1] || null);
+  // Ensure action row has Save/Clear buttons (styled)
+  var actionRow = children[children.length - 1];
+  if (actionRow && !actionRow.querySelector('.save-btn')) {
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'save-btn brightness-btn';
+    saveBtn.style.borderColor = 'rgba(34,197,94,0.3)';
+    saveBtn.style.color = 'var(--aqi-good)';
+    saveBtn.textContent = 'Save';
+    saveBtn.onclick = function() { saveSchedules(id); };
+    var clearBtn = document.createElement('button');
+    clearBtn.className = 'brightness-btn';
+    clearBtn.textContent = 'Clear All';
+    clearBtn.onclick = function() { clearSchedule(id); };
+    actionRow.appendChild(saveBtn);
+    actionRow.appendChild(clearBtn);
+  }
+}
+
+function saveSchedules(id) {
+  var rows = document.querySelectorAll('.sched-row');
+  var pairs = [];
+  rows.forEach(function(row) {
+    var on = row.querySelector('.sched-on').value;
+    var off = row.querySelector('.sched-off').value;
+    if (on && off) pairs.push({on: on, off: off});
+  });
+  if (pairs.length === 0) { showToast('Add at least one schedule', 'error'); return; }
+  var label = pairs.map(function(p) { return p.on + '\u2013' + p.off; }).join(', ');
+  post('/api/device/' + id + '/schedule', {schedules: pairs}, 'Schedule: ' + label);
+  closeSettings();
+}
+
+function clearSchedule(id) {
+  post('/api/device/' + id + '/schedule', {clear: true}, 'Schedule cleared');
+  closeSettings();
+}
 
 fetchStatus();
 </script>
