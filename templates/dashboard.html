@@ -1001,8 +1001,8 @@ async function post(url, body, successMsg) {
   var match = url.match(/\/device\/([^/]+)/);
   var devId = match ? match[1] : null;
   if (devId) busyDevices.add(devId);
-  // Note: no renderDevices() here — the caller (setFan/setMode/togglePower)
-  // already did an optimistic render with busyDevices set
+  // Pause auto-refresh so it doesn't overwrite optimistic state with stale data
+  clearTimeout(refreshTimer);
   try {
     const res = await fetch(API + url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {}) });
     const data = await res.json();
@@ -1029,6 +1029,9 @@ async function post(url, body, successMsg) {
   } catch (e) {
     showToast('Connection failed', 'error');
     if (devId) busyDevices.delete(devId);
+    // Restart auto-refresh on failure
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(fetchStatus, 5000);
   }
 }
 
