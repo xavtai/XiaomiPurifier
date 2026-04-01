@@ -95,9 +95,20 @@ _last_poll_time: float = 0
 _poll_ready = threading.Event()  # set after first poll completes
 _previous_aqi: dict = {}  # {device_id: last_pm25} for spike detection
 
-# Outdoor AQI state
+# Outdoor AQI state — try env vars first, fall back to .env file
 IQAIR_KEY = os.environ.get("IQAIR_KEY", "")
 WAQI_TOKEN = os.environ.get("WAQI_TOKEN", "")
+if not IQAIR_KEY or not WAQI_TOKEN:
+    _env_path = Path(__file__).parent / ".env"
+    if _env_path.exists():
+        for _line in _env_path.read_text().splitlines():
+            if "=" in _line and not _line.startswith("#"):
+                _k, _v = _line.split("=", 1)
+                _k, _v = _k.strip(), _v.strip()
+                if _k == "IQAIR_KEY" and not IQAIR_KEY:
+                    IQAIR_KEY = _v
+                elif _k == "WAQI_TOKEN" and not WAQI_TOKEN:
+                    WAQI_TOKEN = _v
 OUTDOOR_POLL_INTERVAL = 900  # 15 minutes
 _outdoor_aqi: dict | None = None
 _last_outdoor_poll: float = 0
