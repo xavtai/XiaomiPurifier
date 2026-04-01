@@ -398,6 +398,15 @@ def _get_device_for_command(device_id: str):
     return None, None
 
 
+def _update_cache(device_id: str, **fields):
+    """Optimistically update cached device status after a successful command."""
+    with _state_lock:
+        for s in _cached_status:
+            if s["id"] == device_id:
+                s.update(fields)
+                break
+
+
 @app.route("/api/device/<device_id>/power", methods=["POST"])
 def api_power(device_id):
     dev_cfg, dev = _get_device_for_command(device_id)
@@ -422,6 +431,7 @@ def api_power(device_id):
             return jsonify({"error": err}), 422
         with _state_lock:
             _manual_override[device_id] = time.time()
+        _update_cache(device_id, power=power)
         return jsonify({"ok": True, "power": power})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -442,6 +452,7 @@ def api_mode(device_id):
         ok, err = _send_and_check(dev, [{"did": "mode", "siid": 2, "piid": 4, "value": mode_val}], "Mode")
         if not ok:
             return jsonify({"error": err}), 422
+        _update_cache(device_id, mode=MODE_NAMES.get(mode_val, mode_str))
         return jsonify({"ok": True, "mode": mode_str})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -478,6 +489,7 @@ def api_fan_level(device_id):
         ok, err = _send_and_check(dev, [{"did": "fan_speed", "siid": fan_cfg["siid"], "piid": fan_cfg["piid"], "value": level}], "Fan speed")
         if not ok:
             return jsonify({"error": err}), 422
+        _update_cache(device_id, mode="Favorite", fan_speed=level)
         return jsonify({"ok": True, "fan_level": level})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -538,6 +550,7 @@ def api_buzzer(device_id):
         ok, err = _send_and_check(dev, [{"did": "buzzer", "siid": 6, "piid": 1, "value": enabled}], "Buzzer")
         if not ok:
             return jsonify({"error": err}), 422
+        _update_cache(device_id, buzzer=enabled)
         return jsonify({"ok": True, "buzzer": enabled})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -553,6 +566,7 @@ def api_child_lock(device_id):
         ok, err = _send_and_check(dev, [{"did": "child_lock", "siid": 8, "piid": 1, "value": enabled}], "Child lock")
         if not ok:
             return jsonify({"error": err}), 422
+        _update_cache(device_id, child_lock=enabled)
         return jsonify({"ok": True, "child_lock": enabled})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -577,6 +591,7 @@ def api_brightness(device_id):
         ok, err = _send_and_check(dev, cmds, "Brightness")
         if not ok:
             return jsonify({"error": err}), 422
+        _update_cache(device_id, brightness=level)
         return jsonify({"ok": True, "brightness": level})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
