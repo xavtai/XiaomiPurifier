@@ -587,6 +587,15 @@ body::before {
 }
 .schedule-inputs button:hover { background: rgba(255,255,255,0.08); color: var(--text); }
 .schedule-inputs .save-btn { border-color: rgba(34,197,94,0.3); color: var(--aqi-good); }
+/* Drag-to-reorder */
+.card[draggable="true"] { cursor: grab; }
+.card.dragging { opacity: 0.4; transform: scale(0.95); }
+.card.drag-over { border-color: var(--accent); box-shadow: 0 0 12px var(--accent-glow); }
+.reorder-mode .card { outline: 1px dashed var(--text-muted); outline-offset: -2px; animation: none !important; }
+.reorder-handle { display: none; position: absolute; top: 6px; left: 50%; transform: translateX(-50%); color: var(--text-muted); font-size: 0.7rem; letter-spacing: 2px; z-index: 2; }
+.reorder-mode .reorder-handle { display: block; }
+.reorder-done-btn { display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 150; padding: 10px 28px; border-radius: 24px; border: 1px solid var(--accent); background: var(--accent); color: white; font-family: var(--font-ui); font-size: 0.85rem; font-weight: 600; cursor: pointer; box-shadow: 0 4px 16px rgba(59,130,246,0.4); }
+.reorder-done-btn.show { display: block; }
 </style>
 </head>
 <body>
@@ -605,6 +614,7 @@ body::before {
     <button class="quick-btn on-all" onclick="allOn()"><span class="icon">&#9654;</span> All On</button>
     <button class="quick-btn off-all" onclick="allOff()"><span class="icon">&#9724;</span> All Off</button>
     <button class="quick-btn" onclick="fetchStatus()"><span class="icon">&#x21BB;</span> Refresh</button>
+    <button class="quick-btn" onclick="enterReorderMode()" id="reorderBtn"><span class="icon">&#x2195;</span> Reorder</button>
   </div>
 </div>
 <div class="error-bar" id="errorBar"></div>
@@ -616,6 +626,7 @@ body::before {
 </div>
 <div class="grid" id="grid" style="display:none;"></div>
 <div class="toast" id="toast"></div>
+<button class="reorder-done-btn" id="reorderDone" onclick="exitReorderMode()">Done</button>
 <div class="settings-backdrop" id="settingsBackdrop" onclick="closeSettings()"></div>
 <div class="settings-modal" id="settingsModal"></div>
 <script>
@@ -627,6 +638,8 @@ let fanConfig = {};
 let levelPresets = {};
 let busyDevices = new Set();
 let refreshTimer = null;
+let reorderActive = false;
+let dragSrcIndex = null;
 
 function aqiColor(aqi) {
   if (aqi == null) return 'var(--text-muted)';
@@ -730,6 +743,10 @@ function createCard(d) {
 
   const card = document.createElement('div');
   card.className = 'card ' + cardCls + (d.spike ? ' spike-card' : '');
+  const handle = document.createElement('div');
+  handle.className = 'reorder-handle';
+  handle.textContent = '\u2261\u2261\u2261';
+  card.appendChild(handle);
 
   // Header: name + gear/lock on left, power toggle on right
   const head = document.createElement('div');
@@ -908,10 +925,34 @@ function createCard(d) {
   return card;
 }
 
+function getSavedOrder() {
+  try { return JSON.parse(localStorage.getItem('purifier-card-order')) || []; } catch(e) { return []; }
+}
+function saveOrder(ids) {
+  try { localStorage.setItem('purifier-card-order', JSON.stringify(ids)); } catch(e) { /* quota exceeded / private browsing */ }
+}
+function sortDevicesByOrder(devs) {
+  const order = getSavedOrder();
+  if (!order.length) return devs;
+  const orderMap = {};
+  order.forEach(function(id, i) { orderMap[id] = i; });
+  return devs.slice().sort(function(a, b) {
+    var ai = orderMap[a.id] != null ? orderMap[a.id] : 999;
+    var bi = orderMap[b.id] != null ? orderMap[b.id] : 999;
+    return ai - bi;
+  });
+}
 function renderDevices() {
   const grid = document.getElementById('grid');
   grid.textContent = '';
-  devices.forEach(d => grid.appendChild(createCard(d)));
+  const sorted = sortDevicesByOrder(devices);
+  sorted.forEach(function(d, i) {
+    var card = createCard(d);
+    card.dataset.deviceId = d.id;
+    card.dataset.index = i;
+    if (reorderActive) setupCardDrag(card, i);
+    grid.appendChild(card);
+  });
 }
 
 function renderOutdoor() {
@@ -974,7 +1015,7 @@ async function fetchStatus() {
     document.getElementById('errorBar').style.display = 'none';
     renderSummary();
     renderOutdoor();
-    renderDevices();
+    if (!reorderActive) renderDevices();
     document.getElementById('updateTime').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
   } catch (e) {
     document.getElementById('errorBar').textContent = 'Connection lost: ' + e.message;
@@ -1020,6 +1061,7 @@ async function post(url, body, successMsg) {
       showToast(successMsg || 'Done', 'success');
     }
     if (devId) busyDevices.delete(devId);
+    if (!devId) busyDevices.clear();  // bulk command (allOn/allOff) — release all
     clearTimeout(pendingRefresh);
     pendingRefresh = setTimeout(function() {
       fetchStatus().then(function() {
@@ -1029,6 +1071,7 @@ async function post(url, body, successMsg) {
   } catch (e) {
     showToast('Connection failed', 'error');
     if (devId) busyDevices.delete(devId);
+    if (!devId) busyDevices.clear();
     // Restart auto-refresh on failure
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(fetchStatus, 5000);
@@ -1061,15 +1104,21 @@ function setFan(id, preset) {
   post('/api/device/' + id + '/fan_level', {level: preset}, 'Speed: ' + (labels[preset] || preset));
 }
 function resetFilter(id) {
-  if (!confirm('Reset filter counter?\nOnly do this after replacing the filter.')) return;
-  post('/api/device/' + id + '/filter_reset', {}, 'Filter reset');
+  var d = devices.find(function(x) { return x.id === id; });
+  var name = d ? d.name : id;
+  if (!confirm('Reset filter counter for ' + name + '?\nOnly do this after replacing the filter.')) return;
+  post('/api/device/' + id + '/filter_reset', {}, name + ' filter reset');
 }
 function allOn() {
   if (!confirm('Turn on all purifiers?')) return;
+  devices.forEach(function(d) { busyDevices.add(d.id); });
+  renderDevices();
   post('/api/all_on', {}, 'All purifiers on');
 }
 function allOff() {
   if (!confirm('Turn off all purifiers?')) return;
+  devices.forEach(function(d) { busyDevices.add(d.id); });
+  renderDevices();
   post('/api/all_off', {}, 'All purifiers off');
 }
 
@@ -1106,7 +1155,7 @@ function openSettings(id) {
   lbl1.textContent = 'Notification Sound';
   var tog1 = document.createElement('button');
   tog1.className = 'settings-toggle ' + (d.buzzer ? 'on' : 'off');
-  tog1.onclick = function() { post('/api/device/' + id + '/buzzer', {enabled: !d.buzzer}, d.buzzer ? 'Sound off' : 'Sound on'); };
+  tog1.onclick = function() { var fresh = devices.find(function(x) { return x.id === id; }); var cur = fresh ? fresh.buzzer : d.buzzer; post('/api/device/' + id + '/buzzer', {enabled: !cur}, cur ? 'Sound off' : 'Sound on'); };
   row1.appendChild(lbl1);
   row1.appendChild(tog1);
   sec1.appendChild(row1);
@@ -1119,7 +1168,7 @@ function openSettings(id) {
   lbl2.textContent = 'Child Lock';
   var tog2 = document.createElement('button');
   tog2.className = 'settings-toggle ' + (d.child_lock ? 'on' : 'off');
-  tog2.onclick = function() { post('/api/device/' + id + '/child_lock', {enabled: !d.child_lock}, d.child_lock ? 'Lock off' : 'Lock on'); };
+  tog2.onclick = function() { var fresh = devices.find(function(x) { return x.id === id; }); var cur = fresh ? fresh.child_lock : d.child_lock; post('/api/device/' + id + '/child_lock', {enabled: !cur}, cur ? 'Lock off' : 'Lock on'); };
   row2.appendChild(lbl2);
   row2.appendChild(tog2);
   sec1.appendChild(row2);
@@ -1259,6 +1308,110 @@ function clearSchedule(id) {
   post('/api/device/' + id + '/schedule', {clear: true}, 'Schedule cleared');
   closeSettings();
 }
+
+// --- Drag-to-reorder ---
+function setupCardDrag(card, index) {
+  card.draggable = true;
+  card.addEventListener('dragstart', function(e) {
+    dragSrcIndex = index;
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', index);
+  });
+  card.addEventListener('dragend', function() {
+    card.classList.remove('dragging');
+    document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('drag-over'); });
+  });
+  card.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    card.classList.add('drag-over');
+  });
+  card.addEventListener('dragleave', function() { card.classList.remove('drag-over'); });
+  card.addEventListener('drop', function(e) {
+    e.preventDefault();
+    card.classList.remove('drag-over');
+    var fromIndex = parseInt(e.dataTransfer.getData('text/plain'));
+    var toIndex = index;
+    if (fromIndex === toIndex) return;
+    reorderCards(fromIndex, toIndex);
+  });
+  // Touch drag support
+  var touchStartY, touchStartX;
+  card.addEventListener('touchstart', function(e) {
+    if (!reorderActive) return;
+    var t = e.touches[0];
+    touchStartY = t.clientY;
+    touchStartX = t.clientX;
+    dragSrcIndex = index;
+  }, {passive: true});
+  card.addEventListener('touchmove', function(e) {
+    if (!reorderActive || dragSrcIndex == null) return;
+    e.preventDefault();
+    var t = e.touches[0];
+    card.style.transform = 'translate(' + (t.clientX - touchStartX) + 'px,' + (t.clientY - touchStartY) + 'px)';
+    card.style.opacity = '0.7';
+    card.style.zIndex = '50';
+    // Find card under finger
+    card.style.pointerEvents = 'none';
+    var el = document.elementFromPoint(t.clientX, t.clientY);
+    card.style.pointerEvents = '';
+    document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('drag-over'); });
+    if (el) {
+      var target = el.closest('.card');
+      if (target && target !== card) target.classList.add('drag-over');
+    }
+  }, {passive: false});
+  card.addEventListener('touchend', function(e) {
+    if (!reorderActive || dragSrcIndex == null) return;
+    card.style.transform = '';
+    card.style.opacity = '';
+    card.style.zIndex = '';
+    var overCard = document.querySelector('.card.drag-over');
+    document.querySelectorAll('.card').forEach(function(c) { c.classList.remove('drag-over'); });
+    if (overCard && overCard !== card) {
+      var toIndex = parseInt(overCard.dataset.index);
+      reorderCards(dragSrcIndex, toIndex);
+    }
+    dragSrcIndex = null;
+  });
+}
+
+function reorderCards(fromIndex, toIndex) {
+  var sorted = sortDevicesByOrder(devices);
+  var ids = sorted.map(function(d) { return d.id; });
+  var moved = ids.splice(fromIndex, 1)[0];
+  ids.splice(toIndex, 0, moved);
+  saveOrder(ids);
+  renderDevices();
+}
+
+function enterReorderMode() {
+  reorderActive = true;
+  document.getElementById('grid').classList.add('reorder-mode');
+  document.getElementById('reorderDone').classList.add('show');
+  document.getElementById('reorderBtn').style.display = 'none';
+  // Pause ALL refresh timers during reorder
+  clearTimeout(refreshTimer);
+  clearTimeout(pendingRefresh);
+  renderDevices();
+  showToast('Drag cards to reorder', 'success');
+}
+
+function exitReorderMode() {
+  reorderActive = false;
+  document.getElementById('grid').classList.remove('reorder-mode');
+  document.getElementById('reorderDone').classList.remove('show');
+  document.getElementById('reorderBtn').style.display = '';
+  renderDevices();
+  // Resume auto-refresh immediately with fresh data
+  clearTimeout(refreshTimer);
+  clearTimeout(pendingRefresh);
+  fetchStatus();
+  showToast('Order saved', 'success');
+}
+
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && reorderActive) exitReorderMode(); });
 
 fetchStatus();
 </script>

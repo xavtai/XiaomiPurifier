@@ -13,5 +13,15 @@ tokens_extracted.json
 china_provision_result.json
 devices.json
 
+# Runtime logs
+flask.log
+ssh_tunnel.log
+
 # Playwright browser automation artifacts
 .playwright-mcp/
+
+# Moat task system
+.moat/
+
+# Claude Code configuration
+.claude/
