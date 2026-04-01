@@ -623,6 +623,8 @@ const API = window.location.pathname.replace(/\/+$/, '');
 let devices = [];
 let outdoor = null;
 let schedules = {};
+let fanConfig = {};
+let levelPresets = {};
 let refreshTimer = null;
 
 function aqiColor(aqi) {
@@ -879,29 +881,24 @@ function createCard(d) {
   });
   card.appendChild(modeRow);
 
-  // Fan slider — shown inline when in Manual (favorite) mode
+  // Level preset buttons — shown inline when in Manual (favorite) mode
   if (isOn && curMode === 'favorite') {
-    const fanRow = document.createElement('div');
-    fanRow.className = 'fan-row';
-    fanRow.style.padding = '4px 0 2px';
-    const fanLbl = document.createElement('span');
-    fanLbl.className = 'fan-label';
-    fanLbl.textContent = 'Speed';
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.className = 'fan-slider';
-    slider.min = '0';
-    slider.max = '14';
-    slider.value = d.fan_level || 0;
-    const fanVal = document.createElement('span');
-    fanVal.className = 'fan-val';
-    fanVal.textContent = d.fan_level || 0;
-    slider.oninput = function() { fanVal.textContent = this.value; };
-    slider.onchange = function(e) { e.stopPropagation(); setFan(d.id, this.value); };
-    fanRow.appendChild(fanLbl);
-    fanRow.appendChild(slider);
-    fanRow.appendChild(fanVal);
-    card.appendChild(fanRow);
+    var presets = levelPresets[d.model] || {};
+    var fanSpeed = d.fan_speed;
+    var presetRow = document.createElement('div');
+    presetRow.className = 'mode-row';
+    presetRow.style.marginBottom = '0';
+    ['low', 'mid', 'high'].forEach(function(preset) {
+      var val = presets[preset];
+      if (val == null) return;
+      var btn = document.createElement('button');
+      var labels = {low: 'Low', mid: 'Mid', high: 'High'};
+      btn.className = 'mode-btn' + (fanSpeed === val ? ' active' : '');
+      btn.textContent = labels[preset];
+      btn.onclick = function(e) { e.stopPropagation(); setFan(d.id, preset); };
+      presetRow.appendChild(btn);
+    });
+    card.appendChild(presetRow);
   }
 
   return card;
@@ -966,6 +963,8 @@ async function fetchStatus() {
     devices = data.devices || [];
     outdoor = data.outdoor || null;
     schedules = data.schedules || {};
+    fanConfig = data.fan_config || {};
+    levelPresets = data.level_presets || {};
     document.getElementById('loadingScreen').style.display = 'none';
     document.getElementById('grid').style.display = '';
     document.getElementById('errorBar').style.display = 'none';
@@ -1023,15 +1022,14 @@ async function post(url, body, successMsg) {
   }
 }
 
-function togglePower(id, isOn) { post('/api/device/' + id + '/power', {action: isOn ? 'off' : 'on'}, isOn ? 'Turned off' : 'Turned on'); }
+function togglePower(id, isOn) { post('/api/device/' + id + '/power', {power: !isOn}, isOn ? 'Turned off' : 'Turned on'); }
 function setMode(id, mode) {
   var names = {auto:'Auto', silent:'Sleep', favorite:'Manual', fan:'Fan'};
   post('/api/device/' + id + '/mode', {mode: mode}, 'Mode: ' + (names[mode] || mode));
 }
-function setFan(id, level) {
-  // Auto-switch to Custom mode so the fan level takes effect
-  fetch(API + '/api/device/' + id + '/mode', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{"mode":"favorite"}' });
-  post('/api/device/' + id + '/fan_level', {level: parseInt(level)}, 'Fan level: ' + level);
+function setFan(id, preset) {
+  var labels = {low: 'Low', mid: 'Mid', high: 'High'};
+  post('/api/device/' + id + '/fan_level', {level: preset}, 'Speed: ' + (labels[preset] || preset));
 }
 function resetFilter(id) {
   if (!confirm('Reset filter counter?\nOnly do this after replacing the filter.')) return;
