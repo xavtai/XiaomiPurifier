@@ -269,7 +269,7 @@ def _poll_outdoor_iqair(lat: float, lon: float) -> bool:
             log.info("Outdoor AQI (IQAir): %s (station: %s)", _outdoor_aqi["aqi"], _outdoor_aqi["station"])
             return True
     except Exception as e:
-        log.warning("IQAir fetch failed: %s", e)
+        log.warning("IQAir fetch failed: %s", type(e).__name__)
     return False
 
 
@@ -298,7 +298,7 @@ def _poll_outdoor_waqi(lat: float, lon: float) -> bool:
             log.info("Outdoor AQI (WAQI): %s (station: %s)", _outdoor_aqi["aqi"], _outdoor_aqi["station"])
             return True
     except Exception as e:
-        log.warning("WAQI fetch failed: %s", e)
+        log.warning("WAQI fetch failed: %s", type(e).__name__)
     return False
 
 
@@ -430,7 +430,7 @@ def api_power(device_id):
         return jsonify({"error": "Device offline or not found"}), 503
 
     try:
-        data = request.json or {}
+        data = request.get_json(silent=True) or {}
         if "power" in data:
             power = bool(data["power"])
         elif data.get("action") == "on":
@@ -482,7 +482,7 @@ def api_fan_level(device_id):
         return jsonify({"error": "Device offline or not found"}), 503
 
     try:
-        data = request.json or {}
+        data = request.get_json(silent=True) or {}
         level_raw = data.get("level", "mid")
         model = dev_cfg.get("model", "")
         presets = LEVEL_PRESETS.get(model, {})
@@ -563,7 +563,8 @@ def api_buzzer(device_id):
     if dev is None:
         return jsonify({"error": "Device offline or not found"}), 503
     try:
-        enabled = bool(request.json.get("enabled", True)) if request.json else True
+        data = request.get_json(silent=True) or {}
+        enabled = bool(data.get("enabled", True))
         ok, err = _send_and_check(dev, [{"did": "buzzer", "siid": 6, "piid": 1, "value": enabled}], "Buzzer")
         if not ok:
             return jsonify({"error": err}), 422
@@ -579,7 +580,8 @@ def api_child_lock(device_id):
     if dev is None:
         return jsonify({"error": "Device offline or not found"}), 503
     try:
-        enabled = bool(request.json.get("enabled", True)) if request.json else True
+        data = request.get_json(silent=True) or {}
+        enabled = bool(data.get("enabled", True))
         ok, err = _send_and_check(dev, [{"did": "child_lock", "siid": 8, "piid": 1, "value": enabled}], "Child lock")
         if not ok:
             return jsonify({"error": err}), 422
@@ -595,7 +597,8 @@ def api_brightness(device_id):
     if dev is None:
         return jsonify({"error": "Device offline or not found"}), 503
     try:
-        level = int(request.json.get("level", 2)) if request.json else 2
+        data = request.get_json(silent=True) or {}
+        level = int(data.get("level", 2))
         level = max(0, min(2, level))
         model = dev_cfg.get("model", "")
         sp = SCREEN_PROP.get(model)
@@ -674,9 +677,9 @@ def _check_schedules():
             for s in sched_list if s.get("on") and s.get("off")
         )
         target_state = "on" if should_be_on else "off"
-        prev_state = _schedule_last_state.get(dev_id)
 
         with _state_lock:
+            prev_state = _schedule_last_state.get(dev_id)
             # Boundary crossing: target changed from last known state — clear override
             if prev_state is not None and prev_state != target_state:
                 _manual_override.pop(dev_id, None)
@@ -692,7 +695,8 @@ def _check_schedules():
                 continue
 
         # Find the device and check actual state
-        device_status = next((d for d in _cached_status if d["id"] == dev_id), None)
+        with _state_lock:
+            device_status = next((d for d in _cached_status if d["id"] == dev_id), None)
         if not device_status or not device_status.get("online"):
             continue
 
@@ -726,12 +730,13 @@ def api_schedules():
 def api_schedule(device_id):
     """Set schedules for a device. Body: {"schedules": [{"on":"07:00","off":"23:00"}, ...]} or {"clear": true}"""
     schedules = _load_schedules()
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
 
     if data.get("clear"):
         schedules.pop(device_id, None)
-        _schedule_last_state.pop(device_id, None)
-        _manual_override.pop(device_id, None)
+        with _state_lock:
+            _schedule_last_state.pop(device_id, None)
+            _manual_override.pop(device_id, None)
     elif "schedules" in data:
         # Validate time format
         import re
@@ -745,8 +750,9 @@ def api_schedule(device_id):
         schedules[device_id] = [{"on": data["on"], "off": data["off"]}]
     else:
         schedules.pop(device_id, None)
-        _schedule_last_state.pop(device_id, None)
-        _manual_override.pop(device_id, None)
+        with _state_lock:
+            _schedule_last_state.pop(device_id, None)
+            _manual_override.pop(device_id, None)
 
     _save_schedules(schedules)
     return jsonify({"ok": True, "schedules": schedules})

@@ -8,7 +8,7 @@ cd /d D:\UsersClaude\Xavier\Claude_Projects\XiaomiPurifier
 for /f "usebackq tokens=1,* delims==" %%a in (".env") do set %%a=%%b
 
 :: Start SSH tunnel with auto-reconnect (runs in background)
-start /B cmd /c "echo SSH tunnel starting... && :loop && ssh -R 8100:localhost:5000 -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes root@152.42.168.105 && echo Tunnel disconnected, reconnecting in 5s... && timeout /t 5 /nobreak >nul && goto loop"
+start /B cmd /c "echo SSH tunnel starting... & :loop & ssh -R 8100:localhost:5000 -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes root@152.42.168.105 & echo Tunnel disconnected, reconnecting in 5s... & timeout /t 5 /nobreak >nul & goto loop"
 
 echo [OK] SSH tunnel started with auto-reconnect
 echo.

@@ -929,7 +929,7 @@ function getSavedOrder() {
   try { return JSON.parse(localStorage.getItem('purifier-card-order')) || []; } catch(e) { return []; }
 }
 function saveOrder(ids) {
-  localStorage.setItem('purifier-card-order', JSON.stringify(ids));
+  try { localStorage.setItem('purifier-card-order', JSON.stringify(ids)); } catch(e) { /* quota exceeded / private browsing */ }
 }
 function sortDevicesByOrder(devs) {
   const order = getSavedOrder();
@@ -1015,7 +1015,7 @@ async function fetchStatus() {
     document.getElementById('errorBar').style.display = 'none';
     renderSummary();
     renderOutdoor();
-    renderDevices();
+    if (!reorderActive) renderDevices();
     document.getElementById('updateTime').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
   } catch (e) {
     document.getElementById('errorBar').textContent = 'Connection lost: ' + e.message;
@@ -1061,6 +1061,7 @@ async function post(url, body, successMsg) {
       showToast(successMsg || 'Done', 'success');
     }
     if (devId) busyDevices.delete(devId);
+    if (!devId) busyDevices.clear();  // bulk command (allOn/allOff) — release all
     clearTimeout(pendingRefresh);
     pendingRefresh = setTimeout(function() {
       fetchStatus().then(function() {
@@ -1070,6 +1071,7 @@ async function post(url, body, successMsg) {
   } catch (e) {
     showToast('Connection failed', 'error');
     if (devId) busyDevices.delete(devId);
+    if (!devId) busyDevices.clear();
     // Restart auto-refresh on failure
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(fetchStatus, 5000);
@@ -1102,15 +1104,21 @@ function setFan(id, preset) {
   post('/api/device/' + id + '/fan_level', {level: preset}, 'Speed: ' + (labels[preset] || preset));
 }
 function resetFilter(id) {
-  if (!confirm('Reset filter counter?\nOnly do this after replacing the filter.')) return;
-  post('/api/device/' + id + '/filter_reset', {}, 'Filter reset');
+  var d = devices.find(function(x) { return x.id === id; });
+  var name = d ? d.name : id;
+  if (!confirm('Reset filter counter for ' + name + '?\nOnly do this after replacing the filter.')) return;
+  post('/api/device/' + id + '/filter_reset', {}, name + ' filter reset');
 }
 function allOn() {
   if (!confirm('Turn on all purifiers?')) return;
+  devices.forEach(function(d) { busyDevices.add(d.id); });
+  renderDevices();
   post('/api/all_on', {}, 'All purifiers on');
 }
 function allOff() {
   if (!confirm('Turn off all purifiers?')) return;
+  devices.forEach(function(d) { busyDevices.add(d.id); });
+  renderDevices();
   post('/api/all_off', {}, 'All purifiers off');
 }
 
@@ -1147,7 +1155,7 @@ function openSettings(id) {
   lbl1.textContent = 'Notification Sound';
   var tog1 = document.createElement('button');
   tog1.className = 'settings-toggle ' + (d.buzzer ? 'on' : 'off');
-  tog1.onclick = function() { post('/api/device/' + id + '/buzzer', {enabled: !d.buzzer}, d.buzzer ? 'Sound off' : 'Sound on'); };
+  tog1.onclick = function() { var fresh = devices.find(function(x) { return x.id === id; }); var cur = fresh ? fresh.buzzer : d.buzzer; post('/api/device/' + id + '/buzzer', {enabled: !cur}, cur ? 'Sound off' : 'Sound on'); };
   row1.appendChild(lbl1);
   row1.appendChild(tog1);
   sec1.appendChild(row1);
@@ -1160,7 +1168,7 @@ function openSettings(id) {
   lbl2.textContent = 'Child Lock';
   var tog2 = document.createElement('button');
   tog2.className = 'settings-toggle ' + (d.child_lock ? 'on' : 'off');
-  tog2.onclick = function() { post('/api/device/' + id + '/child_lock', {enabled: !d.child_lock}, d.child_lock ? 'Lock off' : 'Lock on'); };
+  tog2.onclick = function() { var fresh = devices.find(function(x) { return x.id === id; }); var cur = fresh ? fresh.child_lock : d.child_lock; post('/api/device/' + id + '/child_lock', {enabled: !cur}, cur ? 'Lock off' : 'Lock on'); };
   row2.appendChild(lbl2);
   row2.appendChild(tog2);
   sec1.appendChild(row2);
@@ -1329,20 +1337,19 @@ function setupCardDrag(card, index) {
     reorderCards(fromIndex, toIndex);
   });
   // Touch drag support
-  var touchStartY, touchStartX, touchClone, touchTarget;
+  var touchStartY, touchStartX;
   card.addEventListener('touchstart', function(e) {
     if (!reorderActive) return;
     var t = e.touches[0];
     touchStartY = t.clientY;
     touchStartX = t.clientX;
     dragSrcIndex = index;
-    touchTarget = card;
   }, {passive: true});
   card.addEventListener('touchmove', function(e) {
     if (!reorderActive || dragSrcIndex == null) return;
     e.preventDefault();
     var t = e.touches[0];
-    card.style.transform = 'translateY(' + (t.clientY - touchStartY) + 'px)';
+    card.style.transform = 'translate(' + (t.clientX - touchStartX) + 'px,' + (t.clientY - touchStartY) + 'px)';
     card.style.opacity = '0.7';
     card.style.zIndex = '50';
     // Find card under finger
@@ -1384,10 +1391,11 @@ function enterReorderMode() {
   document.getElementById('grid').classList.add('reorder-mode');
   document.getElementById('reorderDone').classList.add('show');
   document.getElementById('reorderBtn').style.display = 'none';
-  // Pause auto-refresh during reorder
+  // Pause ALL refresh timers during reorder
   clearTimeout(refreshTimer);
+  clearTimeout(pendingRefresh);
   renderDevices();
-  showToast('Drag cards to reorder', 'ok');
+  showToast('Drag cards to reorder', 'success');
 }
 
 function exitReorderMode() {
@@ -1396,10 +1404,11 @@ function exitReorderMode() {
   document.getElementById('reorderDone').classList.remove('show');
   document.getElementById('reorderBtn').style.display = '';
   renderDevices();
-  // Resume auto-refresh
+  // Resume auto-refresh immediately with fresh data
   clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(fetchStatus, 15000);
-  showToast('Order saved', 'ok');
+  clearTimeout(pendingRefresh);
+  fetchStatus();
+  showToast('Order saved', 'success');
 }
 
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape' && reorderActive) exitReorderMode(); });
