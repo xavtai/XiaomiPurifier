@@ -70,10 +70,12 @@ FILTER_RESET_GUIDE = {
 DEVICES_FILE = Path(__file__).parent / "devices.json"
 _device_cache: dict = {}
 _device_lock = threading.Lock()
+_state_lock = threading.Lock()  # protects _cached_status, _manual_override, _schedule_last_state
 
 # Background poll state
 _cached_status: list = []
 _last_poll_time: float = 0
+_poll_ready = threading.Event()  # set after first poll completes
 _previous_aqi: dict = {}  # {device_id: last_pm25} for spike detection
 
 # Outdoor AQI state
@@ -293,8 +295,10 @@ def _poll_all_devices():
 
     id_order = {d["id"]: i for i, d in enumerate(devices)}
     results.sort(key=lambda r: id_order.get(r["id"], 999))
-    _cached_status = results
+    with _state_lock:
+        _cached_status = results
     _last_poll_time = time.time()
+    _poll_ready.set()
 
 
 def _background_poller():
@@ -330,10 +334,9 @@ def index():
 
 @app.route("/api/status")
 def api_status():
-    if not _cached_status:
-        # First request before background poll completes — poll now
-        _poll_all_devices()
-        _poll_outdoor_aqi()
+    if not _poll_ready.is_set():
+        # First request before background poll completes — wait for it
+        _poll_ready.wait(timeout=15)
     return jsonify({"devices": _cached_status, "outdoor": _outdoor_aqi, "schedules": _load_schedules()})
 
 
@@ -370,7 +373,8 @@ def api_power(device_id):
             power = not current
 
         dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": power}])
-        _manual_override[device_id] = time.time()  # suppress scheduler
+        with _state_lock:
+            _manual_override[device_id] = time.time()
         return jsonify({"ok": True, "power": power})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -439,7 +443,7 @@ def api_filter_reset(device_id):
 
         # Re-poll device to get fresh values
         fresh = _poll_device(dev_cfg)
-        with _device_lock:
+        with _state_lock:
             for i, s in enumerate(_cached_status):
                 if s["id"] == device_id:
                     _cached_status[i] = fresh
@@ -522,11 +526,15 @@ def _save_schedules(schedules: dict):
 def _is_in_active_window(on_time: str, off_time: str) -> bool:
     """Check if current time falls within the on→off window. Handles overnight wrap."""
     from datetime import datetime
-    now = datetime.now()
-    h, m = map(int, on_time.split(":"))
-    on_min = h * 60 + m
-    h, m = map(int, off_time.split(":"))
-    off_min = h * 60 + m
+    try:
+        now = datetime.now()
+        h, m = map(int, on_time.split(":"))
+        on_min = h * 60 + m
+        h, m = map(int, off_time.split(":"))
+        off_min = h * 60 + m
+    except (ValueError, AttributeError):
+        log.warning("Invalid schedule time format: on=%s off=%s", on_time, off_time)
+        return False
     cur_min = now.hour * 60 + now.minute
 
     if on_min <= off_min:
@@ -556,46 +564,37 @@ def _check_schedules():
             for s in sched_list if s.get("on") and s.get("off")
         )
         target_state = "on" if should_be_on else "off"
+        prev_state = _schedule_last_state.get(dev_id)
 
-        # Skip if we already set this state
-        if _schedule_last_state.get(dev_id) == target_state:
-            # Check for manual override — if state changed, a boundary was crossed
+        with _state_lock:
+            # Boundary crossing: target changed from last known state — clear override
+            if prev_state is not None and prev_state != target_state:
+                _manual_override.pop(dev_id, None)
+
+            # Skip if manual override is active
             if dev_id in _manual_override:
-                continue
-            # Already in correct state, nothing to do
-            # But check if device actually matches (e.g. after restart)
-            device_status = next((d for d in _cached_status if d["id"] == dev_id), None)
-            if device_status and device_status.get("online"):
-                actual_on = device_status.get("power", False)
-                if actual_on == should_be_on:
-                    continue
-            else:
+                _schedule_last_state[dev_id] = target_state
                 continue
 
-        # State transition — clear manual override
-        if _schedule_last_state.get(dev_id) != target_state:
-            _manual_override.pop(dev_id, None)
-
-        # Skip if manual override is active
-        if dev_id in _manual_override:
-            continue
-
-        # Find the device and send power command
+        # Find the device and check actual state
         device_status = next((d for d in _cached_status if d["id"] == dev_id), None)
         if not device_status or not device_status.get("online"):
             continue
 
         actual_on = device_status.get("power", False)
         if actual_on == should_be_on:
-            _schedule_last_state[dev_id] = target_state
+            with _state_lock:
+                _schedule_last_state[dev_id] = target_state
             continue
 
+        # Device state doesn't match schedule — send command
         try:
             _, dev = _get_device_for_command(dev_id)
             if dev:
                 dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": should_be_on}])
                 log.info("Schedule: %s turned %s", dev_id, target_state)
-                _schedule_last_state[dev_id] = target_state
+                with _state_lock:
+                    _schedule_last_state[dev_id] = target_state
         except Exception as e:
             log.warning("Schedule command failed for %s: %s", dev_id, e)
 
@@ -636,7 +635,8 @@ def _set_power_one(dev_cfg: dict, power: bool) -> dict:
         _, dev = _get_device_for_command(dev_cfg["id"])
         if dev:
             dev.send("set_properties", [{"did": "power", "siid": 2, "piid": 1, "value": power}])
-            _manual_override[dev_cfg["id"]] = time.time()
+            with _state_lock:
+                _manual_override[dev_cfg["id"]] = time.time()
             return {"id": dev_cfg["id"], "ok": True}
         return {"id": dev_cfg["id"], "error": "offline"}
     except Exception as e:

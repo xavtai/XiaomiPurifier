@@ -1,13 +1,15 @@
 # XiaomiPurifier
 
 ## Project Overview
-Local control dashboard for 7 Xiaomi air purifiers in Chiang Mai. Flask app with waitress production server, background polling every 10s, remote access via SSH tunnel to VPS.
+Local control dashboard for 7 Xiaomi air purifiers in Chiang Mai. Flask app with waitress production server, background polling every 10s, remote access via SSH tunnel to VPS. Outdoor AQI from IQAir (Mae Hia) with WAQI fallback.
 
 ## Active System
-- `app.py` — **Live production dashboard.** Waitress server, background polling, generic MiOT protocol for all models.
-- `templates/dashboard.html` — Mobile-first responsive dashboard with AQI color coding, filter warnings, All On/Off.
-- `devices.json` — Device configs with tokens (gitignored, contains secrets).
-- `start.bat` — Starts Flask + SSH tunnel with auto-reconnect. Double-click to run.
+- `app.py` — **Live production dashboard.** Waitress server, background polling, generic MiOT protocol for all models. Includes: outdoor AQI polling, spike detection, device settings (buzzer/child lock/brightness), daily scheduling with manual override.
+- `templates/dashboard.html` — Mobile-first responsive dashboard with 6-tier AQI color coding, outdoor AQI bar, settings modal (gear icon), inline fan slider on Manual mode, schedule labels, filter reset with model-specific guides.
+- `devices.json` — Device configs with tokens (gitignored, contains secrets). Also holds `outdoor.lat/lon` for AQI station coordinates.
+- `schedules.json` — Per-device on/off schedules (created on first save).
+- `.env` — API keys for IQAir and WAQI (gitignored). Read by `start.bat` at launch.
+- `start.bat` — Starts Flask + SSH tunnel with auto-reconnect. Loads `.env` for API keys. Double-click to run.
 - Remote: `https://app.xavbuilds.com/purifier/` (basic auth: admin/****)
 
 ## Setup Tools (used once, kept for reference)
@@ -17,9 +19,13 @@ Local control dashboard for 7 Xiaomi air purifiers in Chiang Mai. Flask app with
 
 ## Key Technical Decisions
 - Generic `Device.send('get_properties')` instead of model-specific python-miio classes (fixes xiaomi.airp.va2b support)
-- Background polling thread with `_device_lock` for thread safety
+- Background polling thread with `_device_lock` (device cache) and `_state_lock` (shared state) for thread safety
 - SSH reverse tunnel (not WireGuard) for remote access
 - Basic auth on nginx `/purifier/` location block
+- Screen brightness siid/piid varies by model — `SCREEN_PROP` dict maps model → MiOT property
+- Scheduling uses `_manual_override` dict to prevent scheduler from undoing user actions until next boundary crossing
+- IQAir API primary (returns Mae Hia, local to Hang Dong), WAQI as fallback
+- `_poll_ready` event prevents double-poll race on first API request
 
 ## Crash Recovery
 Read CHECKPOINT.md in the memory directory at session start. If ACTIVE, a previous session crashed — offer to resume. If IDLE + clean git tree, proceed normally. Full protocol details in the checkpoint file's frontmatter.
