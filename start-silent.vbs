@@ -17,4 +17,4 @@ End If
 ' Not running — launch watchdog.pyw (runs silently, no console)
 Set WshShell = CreateObject("WScript.Shell")
 WshShell.CurrentDirectory = "D:\UsersClaude\Xavier\Claude_Projects\XiaomiPurifier"
-WshShell.Run """D:\UsersClaude\Xavier\Claude_Projects\XiaomiPurifier\watchdog.pyw""", 0, False
+WshShell.Run """C:\Users\Xavie\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe"" ""D:\UsersClaude\Xavier\Claude_Projects\XiaomiPurifier\watchdog.pyw""", 0, False

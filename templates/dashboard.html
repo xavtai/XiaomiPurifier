@@ -1102,19 +1102,21 @@ async function fetchStatus() {
 // Outdoor AQI threshold notifications
 var lastNotifiedAqiLevel = 0;
 function checkAqiNotification() {
-  if (!outdoor || outdoor.aqi == null) return;
-  var aqi = outdoor.aqi;
-  var level = aqi > 200 ? 3 : (aqi > 150 ? 2 : (aqi > 100 ? 1 : 0));
-  if (level > 0 && level > lastNotifiedAqiLevel) {
-    var labels = {1: 'Moderate', 2: 'Unhealthy for Sensitive', 3: 'Unhealthy'};
-    var msg = 'Outdoor AQI ' + aqi + ' (' + labels[level] + ') — ' + (outdoor.station || '');
-    if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('Air Quality Alert', {body: msg, icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🌫</text></svg>'});
-    } else {
-      showToast(msg, 'error');
+  try {
+    if (!outdoor || outdoor.aqi == null) return;
+    var aqi = outdoor.aqi;
+    var level = aqi > 200 ? 3 : (aqi > 150 ? 2 : (aqi > 100 ? 1 : 0));
+    if (level > 0 && level > lastNotifiedAqiLevel) {
+      var labels = {1: 'Moderate', 2: 'Unhealthy for Sensitive', 3: 'Unhealthy'};
+      var msg = 'Outdoor AQI ' + aqi + ' (' + labels[level] + ') — ' + (outdoor.station || '');
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('Air Quality Alert', {body: msg, icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🌫</text></svg>'});
+      } else {
+        showToast(msg, 'error');
+      }
     }
-  }
-  lastNotifiedAqiLevel = level;
+    lastNotifiedAqiLevel = level;
+  } catch(e) { /* Notification API can throw on some mobile browsers */ }
 }
 // Request notification permission on first interaction
 document.addEventListener('click', function reqPerm() {
