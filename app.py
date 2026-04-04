@@ -184,6 +184,7 @@ def _poll_device(dev_cfg: dict) -> dict:
         "name": dev_cfg["name"],
         "ip": dev_cfg["ip"],
         "model": dev_cfg.get("model", ""),
+        "floor": dev_cfg.get("floor", ""),
         "online": False,
     }
     try:

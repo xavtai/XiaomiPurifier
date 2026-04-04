@@ -176,6 +176,54 @@ body::before {
   height: 5px;
   border-radius: 50%;
 }
+/* Hero overview section */
+.hero {
+  margin: 0 16px 4px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.hero-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+.hero-stat-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+}
+.hero-stat-value {
+  font-family: var(--font-data);
+  font-size: 1.3rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.hero-stat-sub {
+  font-size: 0.6rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.hero-stat-detail {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+}
+.hero-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border-strong);
+  flex-shrink: 0;
+}
 .grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -245,6 +293,13 @@ body::before {
   letter-spacing: -0.01em;
   line-height: 1.2;
   white-space: nowrap;
+}
+.model-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.6;
+  flex-shrink: 1;
+  min-width: 0;
 }
 .power-toggle {
   width: 44px;
@@ -450,52 +505,6 @@ body::before {
   background: rgba(239,68,68,0.9);
   color: white;
 }
-.outdoor-bar {
-  margin: 0 16px 4px;
-  padding: 10px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  position: relative;
-  z-index: 1;
-}
-.outdoor-bar .outdoor-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.outdoor-aqi-num {
-  font-family: var(--font-data);
-  font-size: 1.5rem;
-  font-weight: 600;
-  line-height: 1;
-}
-.outdoor-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.outdoor-label {
-  font-size: 0.7rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-.outdoor-station {
-  font-size: 0.6rem;
-  color: var(--text-muted);
-}
-.outdoor-comparison {
-  font-family: var(--font-data);
-  font-size: 0.65rem;
-  color: var(--text-secondary);
-  text-align: right;
-  white-space: nowrap;
-}
 .card.spike-card {
   border-color: var(--aqi-unhealthy);
   animation: spike-pulse 1.5s ease-in-out infinite;
@@ -627,7 +636,7 @@ body::before {
 </div>
 <div class="error-bar" id="errorBar"></div>
 <div id="summaryBar" class="summary"></div>
-<div class="outdoor-bar" id="outdoorBar" style="display:none;"></div>
+<div class="hero" id="heroSection" style="display:none;"></div>
 <div class="loading-screen" id="loadingScreen">
   <div class="loading-rings"></div>
   <div class="loading-text">Connecting to purifiers...</div>
@@ -684,6 +693,13 @@ function filterColor(pct) {
 }
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
+var MODEL_NAMES = {
+  'zhimi.airpurifier.mb4': '3C',
+  'zhimi.airp.mb5': '4',
+  'zhimi.airp.rmb1': '4 Lite',
+  'xiaomi.airp.cpa4': '4 Compact',
+  'xiaomi.airp.va2b': '4 Pro'
+};
 var FILTER_RESET_GUIDE = {
   'zhimi.airpurifier.mb4': '3C: Hold RIGHT button 7 sec in standby (3 beeps + green light)',
   'xiaomi.airp.cpa4':      '4 Compact: Hold POWER button 6 sec in standby (sound + green light)',
@@ -703,41 +719,8 @@ function filterTimeEstimate(life, hours) {
 }
 
 function renderSummary() {
-  const bar = document.getElementById('summaryBar');
-  const online = devices.filter(d => d.online).length;
-  const running = devices.filter(d => d.online && d.power).length;
-  const aqis = devices.filter(d => d.aqi != null);
-  const avgAqi = aqis.length ? Math.round(aqis.reduce((s, d) => s + d.aqi, 0) / aqis.length) : 0;
-  const lowFilter = devices.filter(d => d.filter_life != null && d.filter_life <= 15);
-  bar.textContent = '';
-
-  // Worst room chip: show highest PM2.5 room if any is >50, else show avg
-  var aqiChip;
-  var worst = aqis.length ? aqis.reduce((w, d) => d.aqi > w.aqi ? d : w) : null;
-  if (worst && worst.aqi > 50) {
-    aqiChip = {text: worst.name + ': ' + worst.aqi, color: aqiColor(worst.aqi)};
-  } else {
-    aqiChip = {text: 'Avg PM2.5: ' + avgAqi, color: aqiColor(avgAqi)};
-  }
-
-  const chips = [
-    {text: running + '/' + online + ' running', color: 'var(--aqi-good)'},
-    aqiChip,
-  ];
-  if (lowFilter.length > 0) {
-    chips.push({text: lowFilter.length + ' filter' + (lowFilter.length > 1 ? 's' : '') + ' low', color: 'var(--filter-warn)', warn: true});
-  }
-  chips.forEach(c => {
-    const chip = document.createElement('div');
-    chip.className = 'summary-chip';
-    if (c.warn) chip.style.cssText = 'border-color:rgba(239,68,68,0.3);color:var(--filter-warn)';
-    const dot = document.createElement('div');
-    dot.className = 'dot';
-    dot.style.background = c.color;
-    chip.appendChild(dot);
-    chip.appendChild(document.createTextNode(c.text));
-    bar.appendChild(chip);
-  });
+  // Summary chips are now merged into renderHero — this is a no-op kept for call compatibility
+  document.getElementById('summaryBar').style.display = 'none';
 }
 
 function createCard(d) {
@@ -761,11 +744,18 @@ function createCard(d) {
   const head = document.createElement('div');
   head.className = 'card-head';
   const nameWrap = document.createElement('div');
-  nameWrap.style.cssText = 'display:flex;align-items:center;gap:6px;';
+  nameWrap.style.cssText = 'display:flex;align-items:center;gap:6px;overflow:hidden;white-space:nowrap;';
   const nameEl = document.createElement('div');
   nameEl.className = 'room-name';
   nameEl.textContent = d.name;
   nameWrap.appendChild(nameEl);
+  var modelName = MODEL_NAMES[d.model];
+  if (modelName) {
+    var modelEl = document.createElement('span');
+    modelEl.className = 'model-label';
+    modelEl.textContent = modelName;
+    nameWrap.appendChild(modelEl);
+  }
   const rightWrap = document.createElement('div');
   rightWrap.style.cssText = 'display:flex;align-items:center;gap:8px;flex-shrink:0;';
   if (d.child_lock) {
@@ -964,71 +954,116 @@ function renderDevices() {
   });
 }
 
-function renderOutdoor() {
-  const bar = document.getElementById('outdoorBar');
-  if (!outdoor || outdoor.aqi == null) { bar.style.display = 'none'; return; }
-  bar.style.display = '';
-  bar.textContent = '';
-  const ac = aqiCls(outdoor.aqi);
+function renderHero() {
+  var hero = document.getElementById('heroSection');
+  var hasOutdoor = outdoor && outdoor.aqi != null;
+  var online = devices.filter(function(d) { return d.online; }).length;
+  var running = devices.filter(function(d) { return d.online && d.power; }).length;
+  var aqis = devices.filter(function(d) { return d.aqi != null; });
+  var lowFilter = devices.filter(function(d) { return d.filter_life != null && d.filter_life <= 15; });
 
-  // Left side: AQI number + label + station
-  const left = document.createElement('div');
-  left.className = 'outdoor-left';
-  const num = document.createElement('div');
-  num.className = 'outdoor-aqi-num ' + ac + '-color';
-  num.textContent = outdoor.aqi;
-  const meta = document.createElement('div');
-  meta.className = 'outdoor-meta';
-  const label = document.createElement('div');
-  label.className = 'outdoor-label';
-  label.style.color = aqiColor(outdoor.aqi);
-  label.textContent = 'Outdoor \u00B7 ' + aqiLabel(outdoor.aqi);
-  const station = document.createElement('div');
-  station.className = 'outdoor-station';
-  station.textContent = outdoor.station || '';
-  meta.appendChild(label);
-  meta.appendChild(station);
-  left.appendChild(num);
-  left.appendChild(meta);
-  bar.appendChild(left);
+  if (!hasOutdoor && devices.length === 0) { hero.style.display = 'none'; return; }
+  hero.style.display = '';
+  hero.textContent = '';
 
-  // Right side: indoor vs outdoor comparison
-  const avgIndoor = devices.filter(function(d) { return d.aqi != null; });
-  const avg = avgIndoor.length ? Math.round(avgIndoor.reduce(function(s, d) { return s + d.aqi; }, 0) / avgIndoor.length) : null;
-  if (avg != null) {
-    const comp = document.createElement('div');
-    comp.className = 'outdoor-comparison';
-    comp.textContent = 'Indoor ' + avg + ' vs Outdoor ' + outdoor.aqi;
-    if (outdoor.pm25 != null) {
-      comp.appendChild(document.createElement('br'));
-      comp.appendChild(document.createTextNode(outdoor.pm25 + ' \u00B5g/m\u00B3'));
-    }
-    bar.appendChild(comp);
+  function addDivider() {
+    var d = document.createElement('div');
+    d.className = 'hero-divider';
+    hero.appendChild(d);
   }
 
-  // Mini sparkline (loaded async, won't block render)
-  fetch(API + '/api/aqi_history?hours=24').then(function(r) { return r.json(); }).then(function(hist) {
-    if (!hist || hist.length < 2) return;
-    var vals = hist.map(function(h) { return h.outdoor || 0; });
-    var max = Math.max.apply(null, vals) || 1;
-    var min = Math.min.apply(null, vals);
-    var w = 120, h = 30;
-    var points = vals.map(function(v, i) {
-      return (i / (vals.length - 1) * w) + ',' + (h - ((v - min) / (max - min + 1)) * h);
-    }).join(' ');
-    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
-    svg.setAttribute('width', w);
-    svg.setAttribute('height', h);
-    svg.style.cssText = 'margin-left:12px;opacity:0.7;flex-shrink:0;';
-    var polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-    polyline.setAttribute('points', points);
-    polyline.setAttribute('fill', 'none');
-    polyline.setAttribute('stroke', aqiColor(outdoor.aqi));
-    polyline.setAttribute('stroke-width', '1.5');
-    svg.appendChild(polyline);
-    bar.appendChild(svg);
-  }).catch(function() {});
+  // Outdoor AQI
+  if (hasOutdoor) {
+    var outStat = document.createElement('div');
+    outStat.className = 'hero-stat';
+    var outLabel = document.createElement('span');
+    outLabel.className = 'hero-stat-label';
+    outLabel.textContent = 'Out';
+    var outVal = document.createElement('span');
+    outVal.className = 'hero-stat-value ' + aqiCls(outdoor.aqi) + '-color';
+    outVal.textContent = outdoor.aqi;
+    var outSub = document.createElement('span');
+    outSub.className = 'hero-stat-sub';
+    outSub.style.color = aqiColor(outdoor.aqi);
+    outSub.textContent = aqiLabel(outdoor.aqi);
+    outStat.appendChild(outLabel);
+    outStat.appendChild(outVal);
+    outStat.appendChild(outSub);
+    hero.appendChild(outStat);
+    addDivider();
+  }
+
+  // Indoor avg AQI
+  var indoorAvg = aqis.length ? Math.round(aqis.reduce(function(s, d) { return s + d.aqi; }, 0) / aqis.length) : null;
+  if (indoorAvg != null) {
+    var inStat = document.createElement('div');
+    inStat.className = 'hero-stat';
+    var inLabel = document.createElement('span');
+    inLabel.className = 'hero-stat-label';
+    inLabel.textContent = 'In';
+    var inVal = document.createElement('span');
+    inVal.className = 'hero-stat-value ' + aqiCls(indoorAvg) + '-color';
+    inVal.textContent = indoorAvg;
+    var inSub = document.createElement('span');
+    inSub.className = 'hero-stat-sub';
+    inSub.style.color = aqiColor(indoorAvg);
+    inSub.textContent = aqiLabel(indoorAvg);
+    inStat.appendChild(inLabel);
+    inStat.appendChild(inVal);
+    inStat.appendChild(inSub);
+    hero.appendChild(inStat);
+    addDivider();
+  }
+
+  // Running count + floor averages
+  var floors = {};
+  aqis.forEach(function(d) {
+    var f = d.floor || '?';
+    if (!floors[f]) floors[f] = [];
+    floors[f].push(d.aqi);
+  });
+  var floorAvgs = {};
+  Object.keys(floors).forEach(function(f) {
+    floorAvgs[f] = Math.round(floors[f].reduce(function(s,v){return s+v;},0) / floors[f].length);
+  });
+  var floorKeys = Object.keys(floorAvgs).sort();
+
+  var infoChip = document.createElement('div');
+  infoChip.className = 'hero-stat';
+  infoChip.style.cssText = 'gap:4px;';
+  var runText = document.createElement('span');
+  runText.className = 'hero-stat-detail';
+  runText.style.color = 'var(--aqi-good)';
+  runText.textContent = running + '/' + online + ' running';
+  infoChip.appendChild(runText);
+  if (floorKeys.length >= 2) {
+    var floorText = document.createElement('span');
+    floorText.className = 'hero-stat-detail';
+    floorText.textContent = floorKeys.map(function(f) { return f + ': ' + floorAvgs[f]; }).join(' \u00B7 ');
+    infoChip.appendChild(floorText);
+  }
+  hero.appendChild(infoChip);
+
+  // Filter warning
+  if (lowFilter.length > 0) {
+    addDivider();
+    var fWarn = document.createElement('span');
+    fWarn.className = 'hero-stat-detail';
+    fWarn.style.color = 'var(--filter-warn)';
+    fWarn.textContent = lowFilter.length + ' filter' + (lowFilter.length > 1 ? 's' : '') + ' low';
+    hero.appendChild(fWarn);
+  }
+
+  // Station name (pushed right)
+  if (hasOutdoor && outdoor.station) {
+    var spacer = document.createElement('div');
+    spacer.style.cssText = 'flex:1;';
+    hero.appendChild(spacer);
+    var stEl = document.createElement('span');
+    stEl.className = 'hero-stat-detail';
+    stEl.textContent = outdoor.station;
+    hero.appendChild(stEl);
+  }
 }
 
 async function fetchStatus() {
@@ -1047,7 +1082,7 @@ async function fetchStatus() {
     document.getElementById('grid').style.display = '';
     document.getElementById('errorBar').style.display = 'none';
     renderSummary();
-    renderOutdoor();
+    renderHero();
     checkAqiNotification();
     if (!reorderActive) renderDevices();
     document.getElementById('updateTime').textContent = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
