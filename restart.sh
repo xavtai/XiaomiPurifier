@@ -41,15 +41,15 @@ if [ -z "$IQAIR_KEY" ] || [ -z "$WAQI_TOKEN" ]; then
   echo "WARNING: Missing API keys — outdoor AQI will be disabled"
 fi
 
-# Kill existing Flask if running on port 5000
-FLASK_PID=$(netstat -ano 2>/dev/null | grep ':5000.*LISTENING' | awk '{print $NF}' | head -1 || true)
+# Kill existing Flask if running on port 5050
+FLASK_PID=$(netstat -ano 2>/dev/null | grep ':5050.*LISTENING' | awk '{print $NF}' | head -1 || true)
 if [ -n "${FLASK_PID:-}" ] && [ "${FLASK_PID:-}" != "0" ]; then
   echo "Killing existing Flask (PID $FLASK_PID)..."
   taskkill //F //PID "$FLASK_PID" 2>/dev/null || true
   sleep 2
   # Verify it's actually dead
-  if netstat -ano 2>/dev/null | grep -q ':5000.*LISTENING'; then
-    echo "ERROR: Port 5000 still in use after kill. Aborting."
+  if netstat -ano 2>/dev/null | grep -q ':5050.*LISTENING'; then
+    echo "ERROR: Port 5050 still in use after kill. Aborting."
     exit 1
   fi
 fi
@@ -72,7 +72,7 @@ echo "Flask starting (PID $FLASK_NEW_PID)..."
 # Wait for Flask to be ready — check HTTP status, not just connection
 FLASK_UP=false
 for i in $(seq 1 15); do
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://localhost:5000/ 2>/dev/null) || true
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 http://localhost:5050/ 2>/dev/null) || true
   if [ "$HTTP_CODE" = "200" ]; then
     FLASK_UP=true
     echo "Flask: UP (200)"
@@ -86,9 +86,16 @@ if ! $FLASK_UP; then
   exit 1
 fi
 
+# Clear stale tunnel on VPS before starting new one
+echo "Clearing stale VPS tunnel..."
+ssh -o ConnectTimeout=5 -o BatchMode=yes root@152.42.168.105 "fuser -k 8100/tcp 2>/dev/null" 2>/dev/null || true
+sleep 2
+
 # Start SSH tunnel with reconnect loop
 nohup bash -c 'while true; do
-  ssh -R 8100:localhost:5000 -N \
+  ssh -o ConnectTimeout=5 -o BatchMode=yes root@152.42.168.105 "fuser -k 8100/tcp 2>/dev/null" 2>/dev/null
+  sleep 1
+  ssh -R 8100:localhost:5050 -N \
     -o ServerAliveInterval=30 \
     -o ServerAliveCountMax=3 \
     -o ExitOnForwardFailure=yes \
@@ -107,4 +114,4 @@ else
   echo "Tunnel: may still be connecting (got $REMOTE_CODE)"
 fi
 
-echo "Done. Local: http://localhost:5000 | Remote: https://app.xavbuilds.com/purifier/"
+echo "Done. Local: http://localhost:5050 | Remote: https://app.xavbuilds.com/purifier/"

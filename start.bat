@@ -2,9 +2,9 @@
 cd /d D:\UsersClaude\Xavier\Claude_Projects\XiaomiPurifier
 
 :: === Duplicate check: exit if Flask is already running ===
-netstat -ano | findstr ":5000.*LISTENING" >nul 2>nul
+netstat -ano | findstr ":5050.*LISTENING" >nul 2>nul
 if %errorlevel%==0 (
-  echo Flask is already running on port 5000. Nothing to do.
+  echo Flask is already running on port 5050. Nothing to do.
   timeout /t 3 /nobreak >nul
   exit /b 0
 )
@@ -19,17 +19,16 @@ for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
   )
 )
 
-:: === SSH tunnel: only start if not already running ===
-tasklist /fi "imagename eq ssh.exe" 2>nul | findstr /i "ssh.exe" >nul 2>nul
-if %errorlevel% neq 0 (
-  start /B cmd /c ":loop & ssh -R 8100:localhost:5000 -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes root@152.42.168.105 & timeout /t 5 /nobreak >nul & goto loop"
-  echo [OK] SSH tunnel started
-) else (
-  echo [OK] SSH tunnel already running
-)
+:: === SSH tunnel: clear stale VPS tunnel, then start ===
+echo Clearing stale VPS tunnel...
+ssh -o ConnectTimeout=5 root@152.42.168.105 "fuser -k 8100/tcp 2>/dev/null" >nul 2>nul
+taskkill /f /im ssh.exe >nul 2>nul
+timeout /t 2 /nobreak >nul
+start /B cmd /c ":loop & ssh -R 8100:localhost:5050 -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes root@152.42.168.105 & timeout /t 5 /nobreak >nul & goto loop"
+echo [OK] SSH tunnel started
 
 echo.
-echo  Local:  http://localhost:5000
+echo  Local:  http://localhost:5050
 echo  Remote: https://app.xavbuilds.com/purifier/
 echo  Close this window to stop Flask.
 echo.

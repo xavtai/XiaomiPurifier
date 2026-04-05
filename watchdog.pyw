@@ -10,26 +10,37 @@ os.chdir(r"D:\UsersClaude\Xavier\Claude_Projects\XiaomiPurifier")
 LOG = os.path.join(os.path.dirname(__file__), "watchdog.log")
 ENV_FILE = os.path.join(os.path.dirname(__file__), ".env")
 APP_PY = os.path.join(os.path.dirname(__file__), "app.py")
-PYTHON = sys.executable  # Use the same python that's running this script
+PYTHON = sys.executable
 VPS = "root@152.42.168.105"
-CHECK_INTERVAL = 15  # seconds between health checks
+CHECK_INTERVAL = 15
 RESTART_DELAY = 10
 MAX_CRASHES = 5
-BACKOFF_DELAY = 300  # 5 minutes
+BACKOFF_DELAY = 300
+_NO_WIN = subprocess.CREATE_NO_WINDOW
 
 
 def log(msg):
     ts = time.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{ts}] {msg}\n"
     try:
         with open(LOG, "a") as f:
-            f.write(line)
+            f.write(f"[{ts}] {msg}\n")
+    except Exception:
+        pass
+
+
+def rotate_log():
+    """Keep only last 500 lines of watchdog.log."""
+    try:
+        with open(LOG) as f:
+            lines = f.readlines()
+        if len(lines) > 500:
+            with open(LOG, "w") as f:
+                f.writelines(lines[-500:])
     except Exception:
         pass
 
 
 def load_env():
-    """Load .env file into os.environ."""
     if not os.path.exists(ENV_FILE):
         return
     with open(ENV_FILE) as f:
@@ -41,16 +52,14 @@ def load_env():
 
 
 def is_flask_up():
-    """Check if Flask is responding on port 5000."""
     try:
-        req = urllib.request.urlopen("http://localhost:5000/", timeout=5)
+        req = urllib.request.urlopen("http://localhost:5050/", timeout=5)
         return req.getcode() == 200
     except Exception:
         return False
 
 
-def is_port_listening(port=5000):
-    """Check if anything is listening on the port."""
+def is_port_listening(port=5050):
     try:
         with socket.create_connection(("localhost", port), timeout=2):
             return True
@@ -58,79 +67,112 @@ def is_port_listening(port=5000):
         return False
 
 
-def is_ssh_tunnel_running():
-    """Check if an SSH tunnel process exists."""
+def is_tunnel_healthy():
+    """Check if VPS port 8100 is actually serving traffic (not just ssh.exe existing)."""
     try:
         result = subprocess.run(
-            ["tasklist", "/fi", "imagename eq ssh.exe"],
-            capture_output=True, text=True, timeout=5
+            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
+             VPS, "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8100/ 2>/dev/null"],
+            capture_output=True, text=True, timeout=15,
+            creationflags=_NO_WIN,
         )
-        return "ssh.exe" in result.stdout
+        return "200" in result.stdout
     except Exception:
         return False
 
 
+def kill_local_ssh():
+    """Kill all local ssh.exe processes."""
+    try:
+        subprocess.run(
+            ["taskkill", "/f", "/im", "ssh.exe"],
+            capture_output=True, timeout=5,
+            creationflags=_NO_WIN,
+        )
+    except Exception:
+        pass
+
+
+def clear_stale_vps_tunnel():
+    """Kill anything holding port 8100 on the VPS."""
+    try:
+        subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
+             VPS, "fuser -k 8100/tcp 2>/dev/null"],
+            capture_output=True, timeout=15,
+            creationflags=_NO_WIN,
+        )
+    except Exception:
+        pass
+
+
 def start_flask():
-    """Start Flask app in background."""
     log("Starting Flask")
-    env = os.environ.copy()
-    proc = subprocess.Popen(
+    return subprocess.Popen(
         [PYTHON, APP_PY],
         cwd=os.path.dirname(__file__),
-        env=env,
-        creationflags=subprocess.CREATE_NO_WINDOW,
+        env=os.environ.copy(),
+        creationflags=_NO_WIN,
     )
-    return proc
 
 
 def start_ssh_tunnel():
-    """Start SSH reverse tunnel in background."""
+    clear_stale_vps_tunnel()
+    time.sleep(2)
     log("Starting SSH tunnel")
-    proc = subprocess.Popen(
-        [
-            "ssh", "-R", "8100:localhost:5000", "-N",
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3",
-            "-o", "ExitOnForwardFailure=yes",
-            VPS,
-        ],
-        creationflags=subprocess.CREATE_NO_WINDOW,
+    return subprocess.Popen(
+        ["ssh", "-R", "8100:localhost:5050", "-N",
+         "-o", "ServerAliveInterval=30",
+         "-o", "ServerAliveCountMax=3",
+         "-o", "ExitOnForwardFailure=yes",
+         VPS],
+        creationflags=_NO_WIN,
     )
-    return proc
 
 
 def main():
     load_env()
+    rotate_log()
     log("Watchdog started")
 
     flask_proc = None
     ssh_proc = None
     crash_count = 0
+    tunnel_check_counter = 0
 
     while True:
         # --- SSH tunnel ---
-        if ssh_proc is None or ssh_proc.poll() is not None:
-            if not is_ssh_tunnel_running():
+        # Full health check every 4th cycle (~60s) to avoid hammering VPS
+        tunnel_check_counter += 1
+        if tunnel_check_counter >= 4:
+            tunnel_check_counter = 0
+            if not is_tunnel_healthy():
+                log("Tunnel unhealthy — restarting")
+                kill_local_ssh()
+                time.sleep(2)
                 ssh_proc = start_ssh_tunnel()
-            # else: tunnel running externally, nothing to do
+                time.sleep(5)
+        elif ssh_proc is not None and ssh_proc.poll() is not None:
+            # SSH process died between health checks
+            log("SSH process exited — restarting tunnel")
+            ssh_proc = start_ssh_tunnel()
+            time.sleep(5)
+        elif ssh_proc is None:
+            ssh_proc = start_ssh_tunnel()
+            time.sleep(5)
 
         # --- Flask ---
         if is_flask_up():
-            # All good — reset crash counter
             crash_count = 0
         elif is_port_listening():
-            # Port is open but not responding HTTP 200 — might be starting up
-            pass
+            pass  # Starting up or another app on the port
         else:
-            # Flask is down
             crash_count += 1
             log(f"Flask down (crash #{crash_count})")
 
-            # Clean up dead process
             if flask_proc and flask_proc.poll() is not None:
                 flask_proc = None
 
-            # Don't start if something else owns port 5000
             if not is_port_listening():
                 if crash_count >= MAX_CRASHES:
                     log(f"Too many crashes ({crash_count}). Backing off {BACKOFF_DELAY}s")
@@ -140,7 +182,6 @@ def main():
                     time.sleep(RESTART_DELAY)
 
                 flask_proc = start_flask()
-                # Give Flask time to bind port
                 time.sleep(8)
 
         time.sleep(CHECK_INTERVAL)
