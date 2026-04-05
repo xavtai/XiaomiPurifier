@@ -93,19 +93,6 @@ def kill_local_ssh():
         pass
 
 
-def clear_stale_vps_tunnel():
-    """Kill anything holding port 8100 on the VPS."""
-    try:
-        subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
-             VPS, "fuser -k 8100/tcp 2>/dev/null"],
-            capture_output=True, timeout=15,
-            creationflags=_NO_WIN,
-        )
-    except Exception:
-        pass
-
-
 def start_flask():
     log("Starting Flask")
     return subprocess.Popen(
@@ -117,8 +104,6 @@ def start_flask():
 
 
 def start_ssh_tunnel():
-    clear_stale_vps_tunnel()
-    time.sleep(2)
     log("Starting SSH tunnel")
     return subprocess.Popen(
         ["ssh", "-R", "8100:localhost:5050", "-N",
