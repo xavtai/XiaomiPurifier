@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-04-02
+**Last updated:** 2026-04-06
 **State:** ACTIVE — Flask dashboard running, remote access live
 
 ## Completed
@@ -18,11 +18,12 @@
 - restart.sh for bash-based Flask + SSH tunnel restart with health checks
 - SessionStart hook auto-checks Flask + tunnel health every conversation
 - 21-bug adversarial audit fix (thread safety, toast visibility, touch drag, API key log leak, SSH reconnect, etc.)
+- (Apr 06) Folder migration fix: updated all paths, SSH tunnel port 8100→8101, watchdog uses schtasks for SSH (pythonw compat), removed broken VPS tunnel cleanup cron
 
 ## How to Run
 
 Double-click `start.bat` — or from bash: `bash restart.sh`
-- Local: http://localhost:5000
+- Local: http://localhost:5050
 - Remote: https://app.xavbuilds.com/purifier/
 
 ## Hardware Decision (pending)

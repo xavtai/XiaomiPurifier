@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-cd /d/UsersClaude/Xavier/Claude_Projects/XiaomiPurifier
+cd /d/UsersClaude/Xavier/Claude_Projects/Personal/XiaomiPurifier
 
 # Lockfile to prevent concurrent runs
 LOCKFILE="/tmp/purifier-restart.lock"
@@ -88,14 +88,14 @@ fi
 
 # Clear stale tunnel on VPS before starting new one
 echo "Clearing stale VPS tunnel..."
-ssh -o ConnectTimeout=5 -o BatchMode=yes root@152.42.168.105 "fuser -k 8100/tcp 2>/dev/null" 2>/dev/null || true
+ssh -o ConnectTimeout=5 -o BatchMode=yes root@152.42.168.105 "fuser -k 8101/tcp 2>/dev/null" 2>/dev/null || true
 sleep 2
 
 # Start SSH tunnel with reconnect loop
 nohup bash -c 'while true; do
-  ssh -o ConnectTimeout=5 -o BatchMode=yes root@152.42.168.105 "fuser -k 8100/tcp 2>/dev/null" 2>/dev/null
+  ssh -o ConnectTimeout=5 -o BatchMode=yes root@152.42.168.105 "fuser -k 8101/tcp 2>/dev/null" 2>/dev/null
   sleep 1
-  ssh -R 8100:localhost:5050 -N \
+  ssh -R 8101:localhost:5050 -N \
     -o ServerAliveInterval=30 \
     -o ServerAliveCountMax=3 \
     -o ExitOnForwardFailure=yes \

@@ -1,5 +1,5 @@
 @echo off
-cd /d D:\UsersClaude\Xavier\Claude_Projects\XiaomiPurifier
+cd /d D:\UsersClaude\Xavier\Claude_Projects\Personal\XiaomiPurifier
 
 :: === Duplicate check: exit if Flask is already running ===
 netstat -ano | findstr ":5050.*LISTENING" >nul 2>nul
@@ -21,10 +21,10 @@ for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
 
 :: === SSH tunnel: clear stale VPS tunnel, then start ===
 echo Clearing stale VPS tunnel...
-ssh -o ConnectTimeout=5 root@152.42.168.105 "fuser -k 8100/tcp 2>/dev/null" >nul 2>nul
+ssh -o ConnectTimeout=5 root@152.42.168.105 "fuser -k 8101/tcp 2>/dev/null" >nul 2>nul
 taskkill /f /im ssh.exe >nul 2>nul
 timeout /t 2 /nobreak >nul
-start /B cmd /c ":loop & ssh -R 8100:localhost:5050 -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes root@152.42.168.105 & timeout /t 5 /nobreak >nul & goto loop"
+start /B cmd /c ":loop & ssh -R 8101:localhost:5050 -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes root@152.42.168.105 & timeout /t 5 /nobreak >nul & goto loop"
 echo [OK] SSH tunnel started
 
 echo.

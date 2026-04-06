@@ -3,9 +3,9 @@ Flask + SSH tunnel watchdog for Air Purifier Dashboard.
 Runs silently (no console window with .pyw extension).
 Checks health every 15s, restarts if down. Prevents duplicates.
 """
-import subprocess, time, os, sys, socket, urllib.request
+import subprocess, time, os, sys, socket, urllib.request, urllib.error
 
-os.chdir(r"D:\UsersClaude\Xavier\Claude_Projects\XiaomiPurifier")
+os.chdir(r"D:\UsersClaude\Xavier\Claude_Projects\Personal\XiaomiPurifier")
 
 LOG = os.path.join(os.path.dirname(__file__), "watchdog.log")
 ENV_FILE = os.path.join(os.path.dirname(__file__), ".env")
@@ -68,15 +68,14 @@ def is_port_listening(port=5050):
 
 
 def is_tunnel_healthy():
-    """Check if VPS port 8100 is actually serving traffic (not just ssh.exe existing)."""
+    """Check tunnel via the public remote URL (avoids SSH subprocess issues from pythonw)."""
     try:
-        result = subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
-             VPS, "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8100/ 2>/dev/null"],
-            capture_output=True, text=True, timeout=15,
-            creationflags=_NO_WIN,
-        )
-        return "200" in result.stdout
+        req = urllib.request.Request("https://app.xavbuilds.com/purifier/",
+                                     method="HEAD")
+        resp = urllib.request.urlopen(req, timeout=10)
+        return resp.status == 200
+    except urllib.error.HTTPError as e:
+        return e.code == 401  # basic auth challenge = tunnel is working
     except Exception:
         return False
 
@@ -103,16 +102,47 @@ def start_flask():
     )
 
 
+def _find_ssh_pid():
+    """Find the PID of the SSH tunnel process (if running)."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-CimInstance Win32_Process -Filter \"name='ssh.exe'\" | "
+             "Where-Object { $_.CommandLine -match '8101' } | "
+             "Select-Object -ExpandProperty ProcessId"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=_NO_WIN,
+        )
+        pid = result.stdout.strip()
+        return int(pid) if pid else None
+    except Exception:
+        return None
+
+
 def start_ssh_tunnel():
+    """Start SSH tunnel via Windows scheduled task (avoids pythonw console issue)."""
     log("Starting SSH tunnel")
-    return subprocess.Popen(
-        ["ssh", "-R", "8100:localhost:5050", "-N",
-         "-o", "ServerAliveInterval=30",
-         "-o", "ServerAliveCountMax=3",
-         "-o", "ExitOnForwardFailure=yes",
-         VPS],
-        creationflags=_NO_WIN,
+    # pythonw.exe has no console; SSH dies immediately when spawned from it.
+    # Use schtasks to run SSH in a proper Windows session.
+    cmd = (f'ssh -R 8101:localhost:5050 -N '
+           f'-o ServerAliveInterval=30 -o ServerAliveCountMax=3 '
+           f'-o ExitOnForwardFailure=yes {VPS}')
+    # Delete old task if exists, create and run a new one
+    subprocess.run(
+        ["schtasks", "/delete", "/tn", "PurifierTunnel", "/f"],
+        capture_output=True, creationflags=_NO_WIN,
     )
+    subprocess.run(
+        ["schtasks", "/create", "/tn", "PurifierTunnel",
+         "/tr", cmd, "/sc", "ONCE", "/st", "00:00",
+         "/rl", "HIGHEST", "/f"],
+        capture_output=True, creationflags=_NO_WIN,
+    )
+    subprocess.run(
+        ["schtasks", "/run", "/tn", "PurifierTunnel"],
+        capture_output=True, creationflags=_NO_WIN,
+    )
+    return None  # tracked via _find_ssh_pid() instead of Popen
 
 
 def main():
@@ -121,7 +151,6 @@ def main():
     log("Watchdog started")
 
     flask_proc = None
-    ssh_proc = None
     crash_count = 0
     tunnel_check_counter = 0
 
@@ -135,16 +164,12 @@ def main():
                 log("Tunnel unhealthy — restarting")
                 kill_local_ssh()
                 time.sleep(2)
-                ssh_proc = start_ssh_tunnel()
-                time.sleep(5)
-        elif ssh_proc is not None and ssh_proc.poll() is not None:
-            # SSH process died between health checks
-            log("SSH process exited — restarting tunnel")
-            ssh_proc = start_ssh_tunnel()
-            time.sleep(5)
-        elif ssh_proc is None:
-            ssh_proc = start_ssh_tunnel()
-            time.sleep(5)
+                start_ssh_tunnel()
+                time.sleep(10)
+        elif _find_ssh_pid() is None:
+            log("SSH tunnel not running — starting")
+            start_ssh_tunnel()
+            time.sleep(10)
 
         # --- Flask ---
         if is_flask_up():

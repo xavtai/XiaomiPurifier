@@ -9,7 +9,7 @@ Local control dashboard for 7 Xiaomi air purifiers in Chiang Mai. Flask app with
 - `devices.json` — Device configs with tokens (gitignored, contains secrets). Also holds `outdoor.lat/lon` for AQI station coordinates.
 - `schedules.json` — Per-device on/off schedules (created on first save).
 - `.env` — API keys for IQAir and WAQI (gitignored). Read by `start.bat` at launch; `app.py` also reads it directly as a fallback if env vars are missing.
-- `watchdog.pyw` — **Auto-start & auto-recovery.** Runs silently on Windows boot (via Startup folder → `start-silent.vbs`). Monitors Flask every 15s, restarts on crash with 5-crash backoff. Also manages SSH tunnel. Logs to `watchdog.log`.
+- `watchdog.pyw` — **Auto-start & auto-recovery.** Runs silently on Windows boot (via Startup folder → `start-silent.vbs`). Monitors Flask every 15s, restarts on crash with 5-crash backoff. Also manages SSH tunnel (via `schtasks` to work around pythonw console limitation). Health-checks tunnel via public URL. Logs to `watchdog.log`.
 - `start.bat` — Manual launcher: starts Flask (foreground) + SSH tunnel. Loads `.env` for API keys. Double-click to run.
 - `start-silent.vbs` — Silent launcher for `watchdog.pyw`. Checks if Flask is already running before launching (duplicate prevention). Called by Windows Startup folder shortcut.
 - `restart.sh` — Bash equivalent of `start.bat` for Claude Code / unix shells. CRLF-safe `.env` parsing, lockfile, health checks, SSH auto-reconnect. Run via `bash restart.sh`.

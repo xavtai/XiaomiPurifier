@@ -4,7 +4,7 @@
 Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
 On Error Resume Next
 http.setTimeouts 3000, 3000, 3000, 3000
-http.Open "GET", "http://localhost:5000/", False
+http.Open "GET", "http://localhost:5050/", False
 http.Send
 statusCode = http.Status
 On Error GoTo 0
@@ -16,5 +16,5 @@ End If
 
 ' Not running — launch watchdog.pyw (runs silently, no console)
 Set WshShell = CreateObject("WScript.Shell")
-WshShell.CurrentDirectory = "D:\UsersClaude\Xavier\Claude_Projects\XiaomiPurifier"
-WshShell.Run """C:\Users\Xavie\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe"" ""D:\UsersClaude\Xavier\Claude_Projects\XiaomiPurifier\watchdog.pyw""", 0, False
+WshShell.CurrentDirectory = "D:\UsersClaude\Xavier\Claude_Projects\Personal\XiaomiPurifier"
+WshShell.Run """C:\Users\Xavie\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe"" ""D:\UsersClaude\Xavier\Claude_Projects\Personal\XiaomiPurifier\watchdog.pyw""", 0, False
