@@ -102,49 +102,6 @@ def start_flask():
     )
 
 
-def _find_ssh_pid():
-    """Find the PID of the SSH tunnel process (if running)."""
-    try:
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command",
-             "Get-CimInstance Win32_Process -Filter \"name='ssh.exe'\" | "
-             "Where-Object { $_.CommandLine -match '8101' } | "
-             "Select-Object -ExpandProperty ProcessId"],
-            capture_output=True, text=True, timeout=10,
-            creationflags=_NO_WIN,
-        )
-        pid = result.stdout.strip()
-        return int(pid) if pid else None
-    except Exception:
-        return None
-
-
-def start_ssh_tunnel():
-    """Start SSH tunnel via Windows scheduled task (avoids pythonw console issue)."""
-    log("Starting SSH tunnel")
-    # pythonw.exe has no console; SSH dies immediately when spawned from it.
-    # Use schtasks to run SSH in a proper Windows session.
-    cmd = (f'ssh -R 8101:localhost:5050 -N '
-           f'-o ServerAliveInterval=30 -o ServerAliveCountMax=3 '
-           f'-o ExitOnForwardFailure=yes {VPS}')
-    # Delete old task if exists, create and run a new one
-    subprocess.run(
-        ["schtasks", "/delete", "/tn", "PurifierTunnel", "/f"],
-        capture_output=True, creationflags=_NO_WIN,
-    )
-    subprocess.run(
-        ["schtasks", "/create", "/tn", "PurifierTunnel",
-         "/tr", cmd, "/sc", "ONCE", "/st", "00:00",
-         "/rl", "HIGHEST", "/f"],
-        capture_output=True, creationflags=_NO_WIN,
-    )
-    subprocess.run(
-        ["schtasks", "/run", "/tn", "PurifierTunnel"],
-        capture_output=True, creationflags=_NO_WIN,
-    )
-    return None  # tracked via _find_ssh_pid() instead of Popen
-
-
 def main():
     load_env()
     rotate_log()
@@ -155,21 +112,16 @@ def main():
     tunnel_check_counter = 0
 
     while True:
-        # --- SSH tunnel ---
-        # Full health check every 4th cycle (~60s) to avoid hammering VPS
+        # --- SSH tunnel health nudge ---
+        # SSH tunnel is managed by ssh-tunnel.bat (launched by start-silent.vbs).
+        # Watchdog only nudges it: every 4th cycle (~60s), check public URL.
+        # If unhealthy, kill ssh.exe so the batch file's :loop reconnects within 5s.
         tunnel_check_counter += 1
         if tunnel_check_counter >= 4:
             tunnel_check_counter = 0
             if not is_tunnel_healthy():
-                log("Tunnel unhealthy — restarting")
+                log("Tunnel unhealthy — killing ssh.exe to trigger batch reconnect")
                 kill_local_ssh()
-                time.sleep(2)
-                start_ssh_tunnel()
-                time.sleep(10)
-        elif _find_ssh_pid() is None:
-            log("SSH tunnel not running — starting")
-            start_ssh_tunnel()
-            time.sleep(10)
 
         # --- Flask ---
         if is_flask_up():
