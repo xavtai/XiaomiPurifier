@@ -1,7 +1,7 @@
 # Project Status
 
-**Last updated:** 2026-04-06
-**State:** ACTIVE — Flask dashboard running, remote access live
+**Last updated:** 2026-04-11
+**State:** ACTIVE — Flask dashboard running, remote access live, reboot-verified
 
 ## Completed
 
@@ -19,6 +19,8 @@
 - SessionStart hook auto-checks Flask + tunnel health every conversation
 - 21-bug adversarial audit fix (thread safety, toast visibility, touch drag, API key log leak, SSH reconnect, etc.)
 - (Apr 06) Folder migration fix: updated all paths, SSH tunnel port 8100→8101, watchdog uses schtasks for SSH (pythonw compat), removed broken VPS tunnel cleanup cron
+- (Apr 11) Reboot-durable remote access: ssh-tunnel.bat in its own cmd.exe, launched via start-silent.vbs. Task Scheduler logon trigger (PurifierDashboardLogon) replaces Startup folder — no 7-min delay. start.bat idempotent with real tunnel health check.
+- (Apr 11) Root cause found after 3 false signoffs: Windows native ssh resolves `localhost` to `::1` first, but Flask is IPv4-only. All `ssh -R` commands now use `127.0.0.1` explicitly. Verified end-to-end via real reboot.
 
 ## How to Run
 
