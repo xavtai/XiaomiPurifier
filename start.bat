@@ -8,13 +8,14 @@ cd /d D:\UsersClaude\Xavier\Claude_Projects\Personal\XiaomiPurifier
 set FLASK_UP=0
 set TUNNEL_UP=0
 
-:: Check Flask
-netstat -ano | findstr ":5050.*LISTENING" >nul 2>nul
-if %errorlevel%==0 set FLASK_UP=1
+:: Check Flask — real HTTP request, not just port listening
+for /f %%c in ('curl -s -o nul -w "%%{http_code}" --max-time 3 http://127.0.0.1:5050/') do set FLASK_CODE=%%c
+if "%FLASK_CODE%"=="200" set FLASK_UP=1
 
-:: Check tunnel (any ssh.exe process counts)
-tasklist /fi "imagename eq ssh.exe" 2>nul | findstr /i "ssh.exe" >nul
-if %errorlevel%==0 set TUNNEL_UP=1
+:: Check tunnel — real curl through tunnel from VPS side (catches zombie tunnels)
+:: Zombie case: ssh.exe exists but forwarding is broken. Only trust actual data flow.
+for /f %%c in ('ssh -o ConnectTimeout=3 -o BatchMode=yes root@152.42.168.105 "curl -m 3 -s -o /dev/null -w %%{http_code} http://127.0.0.1:8101/" 2^>nul') do set TUNNEL_CODE=%%c
+if "%TUNNEL_CODE%"=="200" set TUNNEL_UP=1
 
 echo.
 echo === Air Purifier Dashboard ===
@@ -34,10 +35,12 @@ if %FLASK_UP%==1 if %TUNNEL_UP%==1 (
 :: === Start tunnel if needed ===
 if %TUNNEL_UP%==0 (
   echo Starting SSH tunnel...
+  :: Kill any zombie ssh.exe and stale VPS-side sshd holding port 8101
+  taskkill /f /im ssh.exe >nul 2>nul
   ssh -o ConnectTimeout=5 root@152.42.168.105 "fuser -k 8101/tcp 2>/dev/null" >nul 2>nul
   timeout /t 2 /nobreak >nul
-  start /B cmd /c ":loop & ssh -R 8101:localhost:5050 -N -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes root@152.42.168.105 & timeout /t 5 /nobreak >nul & goto loop"
-  echo [OK] SSH tunnel launched
+  start "" /B "D:\UsersClaude\Xavier\Claude_Projects\Personal\XiaomiPurifier\ssh-tunnel.bat"
+  echo [OK] SSH tunnel launched via ssh-tunnel.bat
   echo.
 )
 

@@ -95,7 +95,7 @@ sleep 2
 nohup bash -c 'while true; do
   ssh -o ConnectTimeout=5 -o BatchMode=yes root@152.42.168.105 "fuser -k 8101/tcp 2>/dev/null" 2>/dev/null
   sleep 1
-  ssh -R 8101:localhost:5050 -N \
+  ssh -R 8101:127.0.0.1:5050 -N \
     -o ServerAliveInterval=30 \
     -o ServerAliveCountMax=3 \
     -o ExitOnForwardFailure=yes \

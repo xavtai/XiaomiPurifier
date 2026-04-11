@@ -29,3 +29,4 @@ docs/plans/
 
 # Claude Code configuration
 .claude/
+ssh-tunnel.log
