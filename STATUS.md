@@ -1,10 +1,11 @@
 # Project Status
 
-**Last updated:** 2026-04-11
+**Last updated:** 2026-04-26 — outdoor AQI station moved off Mae Hia outlier
 **State:** ACTIVE — Flask dashboard running, remote access live, reboot-verified
 
 ## Completed
 
+- (Apr 26) Outdoor AQI: switched IQAir nearest_city target from Mae Hia (consistently 30–50 below surrounding cluster) to Ban Waen via coords `(18.720, 98.945)`. Empirically probed several candidates with curl before committing.
 - All 7 purifier tokens extracted and verified (5 Thai-set cloud + 2 China-set uid provisioning)
 - China 4 Pro token rotation solved: provisioned with uid → registered to SG cloud → stable tokens
 - Flask dashboard rewritten with generic MiOT protocol (all models work including xiaomi.airp.va2b)
