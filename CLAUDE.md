@@ -31,6 +31,3 @@ Local control dashboard for 7 Xiaomi air purifiers in Chiang Mai. Flask app with
 - Scheduling uses `_manual_override` dict to prevent scheduler from undoing user actions until next boundary crossing
 - IQAir API primary (returns Mae Hia, local to Hang Dong), WAQI as fallback
 - `_poll_ready` event prevents double-poll race on first API request
-
-## Crash Recovery
-Read CHECKPOINT.md in the memory directory at session start. If ACTIVE, a previous session crashed — offer to resume. If IDLE + clean git tree, proceed normally. Full protocol details in the checkpoint file's frontmatter.
