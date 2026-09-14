@@ -852,7 +852,7 @@ if __name__ == "__main__":
     poller = threading.Thread(target=_background_poller, daemon=True)
     poller.start()
 
-    host = os.environ.get("HOST", "0.0.0.0")
+    host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "5050"))
 
     print(f"\n  Air Purifier Control: http://{host}:{port}")
