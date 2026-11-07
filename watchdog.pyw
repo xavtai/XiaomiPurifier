@@ -70,8 +70,11 @@ def is_port_listening(port=5050):
 def is_tunnel_healthy():
     """Check tunnel via the public remote URL (avoids SSH subprocess issues from pythonw)."""
     try:
+        # Named User-Agent: Cloudflare answers 403 to the default Python-urllib one,
+        # which read as "tunnel down" and caused a kill every 70s from 2026-10-15.
         req = urllib.request.Request("https://app.xavbuilds.com/purifier/",
-                                     method="HEAD")
+                                     method="HEAD",
+                                     headers={"User-Agent": "purifier-watchdog/1.0"})
         resp = urllib.request.urlopen(req, timeout=10)
         return resp.status == 200
     except urllib.error.HTTPError as e:
@@ -81,11 +84,16 @@ def is_tunnel_healthy():
 
 
 def kill_local_ssh():
-    """Kill all local ssh.exe processes."""
+    """Kill ONLY this dashboard's tunnel ssh.exe (the one forwarding port 8101).
+    Never kill every ssh.exe: that also killed the nightly offsite backup and every
+    other SSH session on this PC (found 2026-11-07)."""
     try:
         subprocess.run(
-            ["taskkill", "/f", "/im", "ssh.exe"],
-            capture_output=True, timeout=5,
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+             "Get-CimInstance Win32_Process -Filter \"Name='ssh.exe'\" | "
+             "Where-Object { $_.CommandLine -like '*-R 8101:*' } | "
+             "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"],
+            capture_output=True, timeout=15,
             creationflags=_NO_WIN,
         )
     except Exception:

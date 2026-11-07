@@ -35,8 +35,9 @@ if %FLASK_UP%==1 if %TUNNEL_UP%==1 (
 :: === Start tunnel if needed ===
 if %TUNNEL_UP%==0 (
   echo Starting SSH tunnel...
-  :: Kill any zombie ssh.exe and stale VPS-side sshd holding port 8101
-  taskkill /f /im ssh.exe >nul 2>nul
+  :: Kill the zombie tunnel ssh.exe only (never every ssh.exe: that also killed the
+  :: offsite backup, found 2026-11-07) and any stale VPS-side sshd holding port 8101
+  powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process -Filter \"Name='ssh.exe'\" | Where-Object { $_.CommandLine -like '*-R 8101:*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>nul
   ssh -o ConnectTimeout=5 root@152.42.168.105 "fuser -k 8101/tcp 2>/dev/null" >nul 2>nul
   timeout /t 2 /nobreak >nul
   start "" /B "D:\UsersClaude\Xavier\Claude_Projects\Personal\XiaomiPurifier\ssh-tunnel.bat"
