@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated:** 2026-04-26 — outdoor AQI station moved off Mae Hia outlier
+**Last updated:** 2026-11-08 - watchdog health check fixed; it no longer kills other SSH sessions
 **State:** ACTIVE — Flask dashboard running, remote access live, reboot-verified
 
 ## Completed
